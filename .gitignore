@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+*.tsbuildinfo
+data/source-cache/
+test-results/
+playwright-report/
+artifacts/
+.wrangler/

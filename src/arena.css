@@ -1,0 +1,165 @@
+.battle {
+  --arena-bg: #181b1c;
+  --arena-panel: #242829;
+  --arena-line: #454b4c;
+  --arena-text: #edece5;
+  --arena-muted: #aeb6b5;
+  --blue: #58bfdd;
+  --red: #f28179;
+  color: var(--arena-text);
+  background: var(--arena-bg);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.battle .match-screen { width: min(100%, 1340px); padding: 0; }
+.battle .match-header { padding-bottom: 12px; border-bottom: 1px solid var(--arena-line); }
+.battle .match-title strong { font-family: 'STKaiti', 'KaiTi', serif; font-size: 23px; }
+.battle .match-title span { color: var(--arena-muted); }
+.battle .icon-command { color: #e9e5d9; background: #2d3233; border-color: #626767; border-radius: 3px; }
+.battle .scoreboard { margin: 0; border-top: 0; border-bottom: 1px solid var(--arena-line); grid-template-columns: 1fr minmax(180px, 2fr) 1fr; }
+.battle .player { gap: 12px; min-height: 72px; font-style: italic; }
+.battle .player.blue { color: var(--blue); border-bottom: 3px solid var(--blue); }
+.battle .player.red { color: var(--red); border-bottom: 3px solid var(--red); }
+.battle .stage-status { border: 0; }
+.battle .stage-status strong { font-size: 18px; color: #f5d48a; }
+.battle .stage-status small { color: var(--arena-muted); }
+.battle .phase-dot { display: none; }
+.win-marks { display: flex; gap: 5px; }
+.win-marks i { width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid currentColor; }
+.win-marks .won { background: currentColor; }
+.phase-track { display: flex; justify-content: center; gap: 26px; padding: 13px 0; color: #8e9898; font-size: 12px; }
+.phase-track span { display: flex; align-items: center; gap: 6px; }
+.phase-track i { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #586060; font-size: 10px; font-style: normal; }
+.phase-track .current { color: #ffe1a5; }
+.phase-track .current i { background: #dcc080; border-color: #dcc080; color: #232727; }
+.phase-track .done { color: #e1e5dc; }
+.draft-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr) 190px; grid-template-areas: 'blue pool red'; gap: 18px; align-items: start; }
+.draft-center { grid-area: pool; min-width: 0; }
+.draft-roster { --side: var(--blue); min-width: 0; border-top: 3px solid var(--side); background: #202425; }
+.draft-roster.blue { grid-area: blue; }
+.draft-roster.red { grid-area: red; --side: var(--red); }
+.roster-heading { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 10px; color: var(--side); border-bottom: 1px solid #434c4d; }
+.roster-heading strong { font-size: 22px; font-style: italic; }
+.roster-heading > span { font-size: 12px; }
+.roster-heading i { font-size: 10px; font-style: normal; margin-left: auto; color: #aab3b3; }
+.active .roster-heading { background: #323c3d; }
+.active .roster-heading i { color: #f2d998; }
+.roster-bans { display: flex; align-items: center; gap: 7px; padding: 10px; border-bottom: 1px solid #3e4445; }
+.roster-bans > span { margin-right: auto; font-size: 11px; color: #b7bfbd; }
+.ban-slot { width: 32px; height: 32px; position: relative; display: grid; place-items: center; border: 1px solid #616565; color: #e98a83; }
+.ban-slot .portrait { width: 100%; height: 100%; border-radius: 0; filter: grayscale(1); opacity: .55; }
+.ban-slot svg { position: absolute; }
+.roster-group { padding: 10px; }
+.roster-group h3 { display: flex; justify-content: space-between; margin: 0 0 9px; font-size: 12px; font-weight: 500; color: #c7cecb; }
+.roster-group h3 > span { color: #9ca8a6; font-size: 10px; }
+.roster-group ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.roster-group li { min-width: 0; }
+.roster-group .portrait, .empty-slot { width: 100%; height: auto; aspect-ratio: 1; border: 1px solid #555e5e; border-radius: 2px; background: #2a3031; }
+.empty-slot { display: grid; place-items: center; color: #717c7d; font-size: 20px; }
+.roster-group li > strong { display: none; }
+.roster-group.ninja ol { grid-template-columns: 1fr; gap: 10px; }
+.roster-group.ninja li { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; align-items: center; }
+.roster-group.ninja li > strong { display: block; font-size: 12px; line-height: 1.5; font-weight: 500; overflow-wrap: anywhere; color: #abb5b4; }
+.roster-group.ninja .filled > strong { color: #ebece4; }
+.filled .portrait { border-color: var(--side); }
+.battle .catalog-toolbar { margin-bottom: 10px; gap: 7px; }
+.battle .text-input, .battle .select-input { color: #f1f0e8; background: #2d3334; border-color: #586361; border-radius: 3px; height: 36px; font-size: 12px; }
+.battle input::placeholder { color: #a4afae; }
+.battle .catalog-toolbar > span { color: #aeb6b5; }
+.battle .item-grid, .battle .item-grid.compact { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; max-height: min(68vh, 730px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #747d74 #202425; padding: 2px 5px 8px 2px; align-content: start; }
+.battle .item-tile { --rank-color: #8eafbc; min-height: 0; height: auto; padding: 0; gap: 0; grid-template-rows: auto 36px; border: 1px solid #707979; border-radius: 2px; background: #303637; color: #e8eae5; align-content: start; }
+.battle .item-tile .portrait { width: 100%; height: auto; aspect-ratio: 1; border-radius: 0; background: #c4cbc5; }
+.battle .item-tile img { object-fit: cover; }
+.battle .item-tile strong { align-self: center; padding: 2px 3px; font-size: 10px; line-height: 1.35; font-weight: 500; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.battle .item-tile[data-rank='S'] { --rank-color: #f2ce71; }
+.battle .item-tile[data-rank='A'] { --rank-color: #eac09c; }
+.battle .item-tile[data-rank='B'] { --rank-color: #d2a8e8; }
+.battle .item-tile[data-rank='C'] { --rank-color: #b5d5e8; }
+.battle .item-tile .rank { top: 2px; left: 3px; right: auto; color: var(--rank-color); font-size: 19px; font-weight: 900; font-style: italic; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000; }
+.battle .item-tile .tile-state { bottom: 36px; left: 0; right: 0; background: #202424e8; padding: 2px; color: #fff; text-align: center; font-size: 10px; }
+.battle .item-tile.banned, .battle .item-tile.past { opacity: .42; filter: grayscale(1); }
+.battle .item-tile.banned::after { content: ''; position: absolute; top: 35%; left: 5%; width: 90%; height: 3px; background: #f0998e; transform: rotate(-40deg); }
+.battle .item-tile.blue { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.battle .item-tile.red { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
+.battle .item-tile.both { border-color: #deb861; }
+.battle .item-tile:not(:disabled):hover { border-color: #f7d591; }
+.battle .timed-bar { margin: 0 0 10px; padding: 8px; background: #242b2a; border-color: #515a58; }
+.battle .timer { color: #f2d494; }
+.battle .seat-tabs { border-color: #5b6766; }
+.battle .seat-tabs button { background: #353c3b; color: #d2d8d4; border-color: #5b6766; }
+.battle .seat-tabs button.active { background: #d6bd80; color: #171e1e; }
+.battle .seat-tabs button.done { background: #436456; color: #fff; }
+.battle .timed-progress span { color: #d5ded9; border-color: #657370; background: #313d39; }
+.battle .share-strip { flex-wrap: wrap; margin: 8px 0; background: #272f2d; color: #dde6d8; border-color: #465c51; border-radius: 2px; }
+.battle .share-strip em, .battle .share-strip button { color: #bfd0c5; }
+.battle .ready-panel { max-width: 660px; margin: 30px auto; border-color: #5b6863; }
+.battle .ready-panel p, .battle .round-actions > span { color: #b4bfba; }
+.battle .button.primary { background: #d9bf81; color: #1c2421; border-color: #f0d7a0; border-radius: 3px; }
+.battle .button.secondary { background: #343d38; color: #ecebdd; border-color: #65736b; border-radius: 3px; }
+.battle .result-board { max-width: 820px; margin-left: auto; margin-right: auto; color: #192526; }
+.battle .round-actions, .battle .completed-banner { max-width: 820px; margin-left: auto; margin-right: auto; }
+.battle .completed-banner { color: #1d3027; }
+.battle .data-note { color: #b5c1bb; }
+@media (max-width: 1000px) and (min-width: 701px) {
+  .draft-layout { grid-template-columns: 144px minmax(0, 1fr) 144px; gap: 10px; }
+  .roster-group.ninja li { grid-template-columns: 46px minmax(0, 1fr); }
+  .roster-group.ninja li > strong { font-size: 10px; }
+  .battle .item-grid, .battle .item-grid.compact { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+}
+@media (max-width: 700px) {
+  .battle { padding: max(8px, env(safe-area-inset-top)) 8px max(12px, env(safe-area-inset-bottom)); }
+  .battle .match-header { padding-bottom: 8px; }
+  .battle .match-title strong { font-size: 19px; }
+  .battle .scoreboard { grid-template-columns: 62px minmax(0, 1fr) 62px; }
+  .battle .player { gap: 5px; padding: 4px; min-height: 60px; }
+  .battle .player strong { font-size: 26px; }
+  .win-marks { display: none; }
+  .battle .stage-status strong { font-size: 15px; }
+  .battle .stage-status small { font-size: 9px; }
+  .phase-track { justify-content: space-between; gap: 3px; padding: 10px 0; font-size: 10px; }
+  .phase-track span { gap: 3px; }
+  .phase-track i { display: none; }
+  .draft-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'blue red' 'pool pool'; gap: 10px; }
+  .roster-heading { height: 28px; padding: 0 6px; gap: 6px; }
+  .roster-heading strong { font-size: 17px; }
+  .roster-heading span, .roster-heading i { font-size: 10px; }
+  .roster-bans { padding: 5px 6px; }
+  .ban-slot { width: 23px; height: 23px; }
+  .roster-group { padding: 4px 6px; }
+  .roster-group h3 { margin-bottom: 4px; font-size: 10px; }
+  .roster-group.ninja ol { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .roster-group.ninja li { display: block; }
+  .roster-group.ninja li > strong { display: none; }
+  .roster-group.ninja .portrait, .roster-group.ninja .empty-slot { height: 40px; width: 100%; aspect-ratio: auto; }
+  .roster-group .portrait img { object-fit: contain; }
+  .roster-group.scroll, .roster-group.summon { display: inline-block; width: 50%; vertical-align: top; padding-bottom: 6px; }
+  .roster-group.scroll h3 > span, .roster-group.summon h3 > span { display: none; }
+  .roster-group.scroll ol, .roster-group.summon ol { gap: 3px; }
+  .roster-group.scroll .portrait, .roster-group.summon .portrait, .roster-group.scroll .empty-slot, .roster-group.summon .empty-slot { height: 20px; aspect-ratio: auto; }
+  .empty-slot { font-size: 13px; }
+  .battle .item-grid, .battle .item-grid.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-height: 54vh; }
+  .battle .catalog-toolbar { gap: 5px; }
+  .battle .catalog-toolbar select { width: 86px; }
+  .battle .catalog-toolbar > span { font-size: 10px; }
+}
+@media (orientation: landscape) and (max-height: 540px) and (min-width: 701px) {
+  .battle { padding-top: max(6px, env(safe-area-inset-top)); }
+  .battle .match-header { padding-bottom: 5px; }
+  .battle .match-title strong { font-size: 18px; }
+  .battle .match-header .icon-command { height: 32px; width: 32px; }
+  .battle .player { min-height: 48px; }
+  .phase-track { padding: 7px 0; }
+  .battle .item-grid, .battle .item-grid.compact { max-height: calc(100dvh - 166px); min-height: 100px; }
+  .roster-heading { height: 27px; padding: 0 6px; }
+  .roster-heading strong { font-size: 18px; }
+  .roster-bans { padding: 5px 6px; }
+  .ban-slot { width: 23px; height: 23px; }
+  .roster-group { padding: 6px; }
+  .roster-group h3 { margin-bottom: 5px; }
+  .roster-group.ninja li { grid-template-columns: 28px minmax(0, 1fr); height: 28px; }
+  .roster-group.ninja li > strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+  .roster-group.ninja ol { gap: 4px; }
+  .roster-group.scroll, .roster-group.summon { display: inline-block; width: 50%; vertical-align: top; }
+  .roster-group.scroll h3 > span, .roster-group.summon h3 > span { display: none; }
+  .roster-group.scroll ol, .roster-group.summon ol { gap: 3px; }
+  .roster-group.scroll .portrait, .roster-group.summon .portrait, .roster-group.scroll .empty-slot, .roster-group.summon .empty-slot { height: 16px; aspect-ratio: auto; font-size: 12px; }
+}

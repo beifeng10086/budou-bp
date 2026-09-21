@@ -1,0 +1,25 @@
+{
+  "collectedAt": "2026-09-18T19:15:41.198Z",
+  "cutoff": "2026-09-19",
+  "input": "user-provided ninja_list.json",
+  "inputSha256": "03ee1b23c48cd41be5e923444a5ba53c2a007c463fbcb8a2a427ab4071b61871",
+  "ninjaRecords": 452,
+  "playableNinjas": 451,
+  "unknownReleaseDates": [],
+  "excludedFuture": [
+    {
+      "id": "ninja-90546",
+      "name": "角都【晓·北】",
+      "releaseDate": "2026-09-24"
+    }
+  ],
+  "scrolls": 42,
+  "summons": 37,
+  "imagesDownloaded": 531,
+  "coverage": {
+    "ninjas": "provided-list",
+    "scrolls": "recommendations-only",
+    "summons": "recommendations-only"
+  },
+  "issues": []
+}
