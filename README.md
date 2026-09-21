@@ -2,7 +2,7 @@
 
 这是一个非官方移动端 BP 练习工具。已接入官网公开资料与本地头像、图标，支持本机演练和双人 WebSocket 房间。
 
-Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。面向玩家的免费部署改用 [Render 免费部署方案](docs/Render免费部署.md)；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
+Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。项目已准备好 [Render 免费部署方案](docs/Render免费部署.md)，尚未上传 GitHub 或上线 Render；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
 
 ## 官网资料与图片
 
@@ -51,7 +51,7 @@ npm run dev
 
 ## 生产部署
 
-当前公网入口使用 [Render 免费部署教程](docs/Render免费部署.md)，由一个免费 Node Web Service 同时提供页面、图片和双人 WebSocket 房间。Render 免费服务闲置 15 分钟会休眠，首次唤醒可能约需 1 分钟；进行中的房间通过客户端心跳保持活跃。
+下一步可按 [Render 免费部署教程](docs/Render免费部署.md) 发布，由一个免费 Node Web Service 同时提供页面、图片和双人 WebSocket 房间。Render 免费服务闲置 15 分钟会休眠，首次唤醒可能约需 1 分钟；进行中的房间通过客户端心跳保持活跃。
 
 ```bash
 npm install
@@ -59,7 +59,7 @@ npm run build
 npm run server
 ```
 
-Render 会返回固定的 `onrender.com` HTTPS 网址，后续更新仍使用同一网址。房间最长保留 6 小时，页面刷新、手机锁屏或短时断网后会自动重连并恢复原席位；免费实例重启、休眠或重新部署会清空未完成房间。
+Render 部署成功后会返回固定的 `onrender.com` HTTPS 网址，后续更新仍使用同一网址。房间无活动 6 小时后过期，页面刷新、手机锁屏或短时断网后会自动重连并恢复原席位；免费实例重启、休眠或重新部署会清空未完成房间。
 
 Railway/Node 是[备用部署方案](docs/公网部署.md)。`server/index.ts` 的房间保存在内存中，只建议用于本地开发或自行管理的 Node 主机。
 

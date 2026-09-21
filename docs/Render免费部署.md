@@ -13,13 +13,23 @@ Cloudflare `workers.dev` 在当前电脑和手机移动网络均无法访问，�
 ## 项目已经准备好的内容
 
 - `render.yaml`：新加坡区域、Node 22、免费套餐、构建和健康检查配置。
-- `server/index.ts`：支持两个席位、令牌恢复、服务端权限和选池校验、服务端计时、6 小时房间有效期。
+- `server/index.ts`：支持两个席位、令牌恢复、服务端权限和选池校验、服务端计时、无活动 6 小时后清理房间。
 - 前端每 25 秒发送心跳，刷新或短时断线后自动重连并恢复原席位。
 - `/health` 返回服务状态；前端、头像、资料包和 `/ws` 使用同一个 HTTPS 域名。
 
 ## 首次发布
 
-Render 需要从 Git 仓库拉取项目。先把当前目录上传到一个 GitHub 仓库，然后打开：
+Render 需要从 Git 仓库拉取项目。当前目录已经初始化并提交了可部署代码，但尚无 GitHub 远端；当前电脑连接 GitHub 登录页面超时，因此还没有创建仓库。网络恢复后，请先在 GitHub 新建空仓库，把本地提交推送过去，然后打开：
+
+```powershell
+Set-Location 'C:\Users\29851\Documents\ChatGPT\武斗bp'
+git remote add origin https://github.com/你的用户名/你的新仓库名.git
+git push -u origin master
+```
+
+不要在 GitHub 新仓库里预先创建 README、`.gitignore` 或 License，以免首次推送需要处理冲突。建议先设为 private；部署时在 Render 授权读取该仓库。若使用 public 仓库，请先考虑头像、图标的素材分发授权。
+
+连接仓库之后打开：
 
 https://dashboard.render.com/blueprints
 
