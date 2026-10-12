@@ -11,4 +11,3 @@ const response = await fetch('https://api.cloudflare.com/client/v4/accounts/a36c
 })
 if (!response.ok) throw new Error(`Snapshot upload failed (${response.status})`)
 console.log(JSON.stringify(snapshot, null, 2))
-

@@ -5,4 +5,3 @@
 - Deployment commands also run a backup hook. This is additional protection, not a replacement for the backup before edits.
 - Preserve the free Cloudflare plan. A pricing question is not authorization to upgrade, buy a domain or incur charges.
 - Display analytics as delayed estimates, never as an exact real-time balance. Never publish account credentials in frontend assets or Git.
-

@@ -14,7 +14,8 @@ test('exhaustion disables shared rooms and preserves local BP', async ({ page })
 })
 test('Cloudflare HTML quota error stops fallback polling and persists across reload', async ({ page }) => {
   let attempts = 0
-  await page.route('**/quota', route => route.fulfill({ json: snapshot(10) }))
+  let quotaReads = 0
+  await page.route('**/quota', route => { quotaReads++; return route.fulfill({ json: snapshot(10) }) })
   await page.routeWebSocket('**/ws?**', socket => socket.close())
   await page.route('**/room?**', route => { attempts++; return route.fulfill({ status: 503, contentType: 'text/html', body: '<h1>Error 1027</h1>' }) })
   await page.goto('/')
@@ -25,6 +26,7 @@ test('Cloudflare HTML quota error stops fallback polling and persists across rel
   expect(attempts).toBe(1)
   await page.reload()
   await expect(page.getByRole('button', { name: '创建共享房间' })).toBeDisabled()
+  expect(quotaReads).toBe(1)
 })
 
 test('unknown quota is shown honestly without disabling local or shared entry', async ({ page }) => {

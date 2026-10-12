@@ -11,4 +11,3 @@ await collectQuota(token, 'a36ce5587a5fb626db08ea0a1276ce64', true)
 const result = spawnSync(process.execPath, [fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url)), 'secret', 'put', 'CF_ANALYTICS_TOKEN'], { cwd: root, input: token, encoding: 'utf8' })
 if (result.status !== 0) throw new Error('Secret installation failed. Check wrangler authentication.')
 console.log('Read-only analytics secret installed. Scheduled statistics update every five minutes. Token was not printed.')
-

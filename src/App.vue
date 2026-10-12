@@ -101,7 +101,7 @@ const createSettings = () => ({ bestOf: bestOf.value, repeatScrolls: repeatScrol
 
 onMounted(() => {
   try { const stored: unknown = JSON.parse(localStorage.getItem('wudou-quota-snapshot') ?? 'null'); if (validQuota(stored)) quota.value = stored } catch { /* Missing cache is normal. */ }
-  void refreshQuota()
+  if (!onlineBlocked.value) void refreshQuota()
   quotaTimer = window.setInterval(() => { if (screen.value === 'home' && !document.hidden && !onlineBlocked.value) void refreshQuota() }, 300000)
   void loadCatalog()
   media = matchMedia('(pointer: coarse), (max-width: 767px)')

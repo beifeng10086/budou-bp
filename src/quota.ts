@@ -21,4 +21,3 @@ export function isQuotaFailure(status: number, body: string) {
   if (status < 400) return false
   return /\bQUOTA_EXHAUSTED\b|\b1027\b|daily (?:request |usage )?limit (?:exceeded|reached)|exceeded (?:the )?(?:daily|free tier) (?:limit|quota)|(?:daily|free tier).{0,50}(?:quota|limit).{0,30}exceeded/i.test(body)
 }
-

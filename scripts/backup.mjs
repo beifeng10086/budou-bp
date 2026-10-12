@@ -22,4 +22,3 @@ const quotePS = value => "'" + value.replace(/'/g, "''") + "'"
 execFileSync('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -LiteralPath ${quotePS(source)} -DestinationPath ${quotePS(join(destination, 'source.zip'))} -CompressionLevel Optimal`], { stdio: 'inherit' })
 await writeFile(join(destination, 'manifest.json'), JSON.stringify({ createdAt: new Date().toISOString(), commit, gitStatus: git('status', '--short'), publicUrl: 'https://wudou-bp-h5.pages.dev/', files: files.length, restore: 'Extract source.zip into a new directory. Use history.bundle to recover commits. npm ci; npm run build:pages; npm run typecheck:worker. Preserve the existing Durable Object namespace and bindings when redeploying. Live room database and credentials are not included.' }, null, 2))
 console.log(`Backup complete: ${destination}`)
-
