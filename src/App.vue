@@ -10,10 +10,46 @@ import { bestOfLabel, createMatch, endMatch, expireTimedPhase, nextRoundProblem,
 import { applyRoomAction, type RoomAction } from './room-actions'
 import { copyText } from './clipboard'
 import type { BestOf, DataPackage, MatchState, Seat, StoredPackage } from './types'
+import { isQuotaFailure, nextQuotaReset, quotaExhausted, validQuota, type QuotaSnapshot } from './quota'
 
 const CUSTOM_KEY = 'budou-bp-custom-packages'
 const TOKEN_PREFIX = 'budou-bp-room-token:'
 const screen = ref<'home' | 'match'>('home')
+const quota = ref<QuotaSnapshot | null>(null)
+const quotaClock = ref(Date.now())
+const quotaLoading = ref(false)
+const quotaUnavailable = ref(false)
+const quotaBlockedUntil = ref(Number(localStorage.getItem('wudou-quota-blocked-until')) || 0)
+const onlineBlocked = computed(() => quotaBlockedUntil.value > quotaClock.value || quotaExhausted(quota.value, quotaClock.value))
+const quotaStale = computed(() => !quota.value || quotaClock.value - quota.value.updatedAt > 10 * 60 * 1000 || quota.value.resetAt <= quotaClock.value)
+const quotaUpdated = computed(() => quota.value ? new Date(quota.value.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '')
+let quotaTimer: number | undefined
+let quotaRequest: Promise<void> | null = null
+let quotaCheckedAt = 0
+function markQuotaExhausted() {
+  quotaBlockedUntil.value = nextQuotaReset()
+  localStorage.setItem('wudou-quota-blocked-until', String(quotaBlockedUntil.value))
+}
+async function refreshQuota() {
+  if (quotaRequest) return quotaRequest
+  quotaLoading.value = true
+  quotaRequest = (async () => {
+    try {
+      const response = await fetch('/quota', { signal: AbortSignal.timeout(8000) })
+      const raw = await response.text()
+      if (isQuotaFailure(response.status, raw)) { markQuotaExhausted(); return }
+      if (!response.ok) throw new Error('Quota unavailable')
+      const snapshot: unknown = JSON.parse(raw)
+      if (!validQuota(snapshot)) throw new Error('Quota unavailable')
+      quota.value = snapshot
+      localStorage.setItem('wudou-quota-snapshot', JSON.stringify(snapshot))
+      quotaUnavailable.value = false
+      if (quotaExhausted(snapshot)) markQuotaExhausted()
+    } catch { quotaUnavailable.value = true }
+    finally { quotaLoading.value = false; quotaCheckedAt = Date.now(); quotaRequest = null }
+  })()
+  return quotaRequest
+}
 function loadPackages(): StoredPackage[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]')
@@ -48,6 +84,7 @@ const exportTarget = ref<HTMLElement | null>(null)
 const savedImage = ref('')
 const match = ref(createMatch(selectedPackage.value, title.value, roundBan.value))
 let transport: RoomTransport | null = null
+let connectionAttempt = 0
 let timer: number | undefined
 let media: MediaQueryList | undefined
 let serverOffset = 0
@@ -63,11 +100,15 @@ const artworkLibrary = computed(() => packages.value.flatMap(pack => pack.ninjas
 const createSettings = () => ({ bestOf: bestOf.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '玩家一'), red: normalizeName(secondName.value, '玩家二') } })
 
 onMounted(() => {
+  try { const stored: unknown = JSON.parse(localStorage.getItem('wudou-quota-snapshot') ?? 'null'); if (validQuota(stored)) quota.value = stored } catch { /* Missing cache is normal. */ }
+  void refreshQuota()
+  quotaTimer = window.setInterval(() => { if (screen.value === 'home' && !document.hidden && !onlineBlocked.value) void refreshQuota() }, 300000)
   void loadCatalog()
   media = matchMedia('(pointer: coarse), (max-width: 767px)')
   detectMobile()
   media.addEventListener('change', detectMobile)
   timer = window.setInterval(() => {
+    quotaClock.value = Date.now()
     const deadline = current.value.phase.expiresAt
     secondsLeft.value = deadline ? Math.min(60, Math.max(0, Math.ceil((deadline - Date.now() - (online.value ? serverOffset : 0)) / 1000))) : 60
     if (!online.value && screen.value === 'match' && deadline && Date.now() >= deadline) match.value = expireTimedPhase(match.value)
@@ -78,7 +119,7 @@ onMounted(() => {
     if (/^[A-Z0-9]{5,8}$/.test(joinCode.value) && localStorage.getItem(TOKEN_PREFIX + joinCode.value)) openRoom('join', joinCode.value)
   }
 })
-onBeforeUnmount(() => { if (timer) clearInterval(timer); transport?.close(); media?.removeEventListener('change', detectMobile) })
+onBeforeUnmount(() => { if (timer) clearInterval(timer); if (quotaTimer) clearInterval(quotaTimer); transport?.close(); media?.removeEventListener('change', detectMobile) })
 
 async function loadCatalog() {
   catalogLoading.value = true
@@ -99,6 +140,7 @@ function requireName() {
 }
 function createLocalMatch() {
   if (!requireName()) return
+  connectionAttempt++
   transport?.close(); transport = null
   online.value = false; roomCode.value = ''; orientation.value = 'landscape'
   match.value = createMatch(selectedPackage.value, title.value, roundBan.value, createSettings())
@@ -115,7 +157,11 @@ function joinOnlineRoom() {
   if (!/^[A-Z0-9]{5,8}$/.test(code)) { connectionLabel.value = '请输入 5–8 位房间码'; return }
   openRoom('join', code)
 }
-function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchState) {
+async function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchState) {
+  const attempt = ++connectionAttempt
+  if (!onlineBlocked.value && Date.now() - quotaCheckedAt > 60000) await refreshQuota()
+  if (attempt !== connectionAttempt) return
+  if (onlineBlocked.value) { connectionLabel.value = '今日共享服务额度已用尽，请使用本机演练'; return }
   transport?.close()
   online.value = false
   connectionLabel.value = '正在连接共享房间…'
@@ -130,6 +176,7 @@ function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchState) 
   endpoint.searchParams.set('name', normalizeName(nickname.value, '玩家二'))
   transport = new RoomTransport({
     endpoint: endpoint.toString(), mode, match: newMatch,
+    onQuotaExhausted: markQuotaExhausted,
     onStatus: message => { connectionLabel.value = message },
     onMessage: (payload: RoomPayload) => {
       if (payload.type === 'room:state' && payload.match) {
@@ -159,7 +206,7 @@ function finish() { if (online.value) action('end'); else match.value = endMatch
 function selectWinner(seat: Seat) { if (online.value) action('winner', { winner: seat }); else match.value = recordWinner(match.value, seat) }
 function swapSeats() { if (online.value) action('swap-seats'); else match.value = swapPlayerNames(match.value) }
 function rename(event: Event, seat: Seat) { action('rename', { seat, name: (event.target as HTMLInputElement).value }) }
-function backHome() { transport?.close(); transport = null; online.value = false; screen.value = 'home'; connectionLabel.value = ''; history.replaceState({}, '', location.pathname) }
+function backHome() { connectionAttempt++; transport?.close(); transport = null; online.value = false; screen.value = 'home'; connectionLabel.value = ''; history.replaceState({}, '', location.pathname); if (!onlineBlocked.value) void refreshQuota() }
 function handleImport(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -191,8 +238,18 @@ async function exportImage() {
   <main class="app-shell" :class="{ battle: screen === 'match', 'arena-play': screen === 'match' && match.status === 'playing', 'mobile-landscape': mobile && orientation === 'landscape', 'portrait-mode': mobile && orientation === 'portrait' }">
     <section v-if="screen === 'home'" class="home-screen">
       <header class="brand-row"><div class="brand-mark"><Swords :size="22" /></div><h1>武斗 BP 练习室</h1></header>
+      <section class="quota-strip" :class="{ 'quota-blocked': onlineBlocked }" aria-label="共享服务额度">
+        <div class="quota-heading"><strong>{{ onlineBlocked ? '今日共享额度已用尽' : '今日共享服务额度' }}</strong><span>北京时间 08:00 重置</span></div>
+        <template v-if="quota && quota.resetAt > quotaClock">
+          <div class="quota-primary"><span>联网请求预计剩余</span><strong>{{ Math.max(0, Math.floor((quota.metrics.find(m => m.id === 'requests')?.limit ?? 100000) - (quota.metrics.find(m => m.id === 'requests')?.used ?? 0))).toLocaleString() }} <small>次</small></strong></div>
+          <div class="quota-metrics"><div v-for="metric in quota.metrics" :key="metric.id"><div><span>{{ metric.label }}</span><span>{{ Math.ceil(metric.used).toLocaleString() }} / {{ metric.limit.toLocaleString() }} {{ metric.unit }}</span></div><progress :value="Math.min(metric.used, metric.limit)" :max="metric.limit" :aria-label="metric.label" /></div></div>
+          <p>{{ quotaStale || quotaUnavailable ? '统计暂未更新 · ' : '' }}{{ quota.automatic ? '官方统计（有延迟）' : '官方统计快照（自动更新尚未接通）' }} · {{ quotaUpdated }}</p>
+        </template>
+        <p v-else>{{ quotaLoading ? '正在读取官方统计…' : '当前剩余额度未知' }}</p>
+        <p v-if="onlineBlocked" role="status">共享房间暂停，本机演练可用。</p>
+      </section>
       <label class="field-label name-field">你的圈名<input v-model="nickname" class="text-input" maxlength="16" placeholder="填写游戏名 / 圈名" autocomplete="nickname" /></label>
-      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
+      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :disabled="onlineBlocked" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
       <p v-if="connectionLabel" class="connection-note" role="status">{{ connectionLabel }}</p>
       <div class="setup-grid">
         <label class="field-label">对局名称<input v-model="title" class="text-input" maxlength="20" /></label>
@@ -209,7 +266,7 @@ async function exportImage() {
         <label><span>秘卷跨小局可重复</span><input v-model="repeatScrolls" type="checkbox" role="switch" /></label>
         <label><span>通灵跨小局可重复</span><input v-model="repeatSummons" type="checkbox" role="switch" /></label>
       </div>
-      <div class="home-actions"><button class="button primary" :disabled="catalogLoading" @click="createLocalMatch"><Swords :size="19" />本机演练</button><button class="button secondary" :disabled="catalogLoading" @click="createOnlineRoom"><Users :size="19" />创建共享房间</button></div>
+      <div class="home-actions"><button class="button primary" :disabled="catalogLoading" @click="createLocalMatch"><Swords :size="19" />本机演练</button><button class="button secondary" :disabled="catalogLoading || onlineBlocked" @click="createOnlineRoom"><Users :size="19" />创建共享房间</button></div>
     </section>
     <section v-else class="match-screen">
       <header class="match-header">

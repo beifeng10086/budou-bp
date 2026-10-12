@@ -1,4 +1,5 @@
 import type { DataPackage, MatchState, Seat } from './types'
+import { isQuotaFailure } from './quota'
 
 type MatchWire = Omit<MatchState, 'data'> & { dataPackageId?: string; data?: DataPackage }
 export interface RoomPayload {
@@ -11,6 +12,7 @@ export interface RoomPayload {
   message?: string
   revision?: number
   serverTime?: number
+  code?: string
 }
 
 interface RoomOptions {
@@ -19,11 +21,13 @@ interface RoomOptions {
   match?: MatchState
   onMessage: (payload: RoomPayload) => void
   onStatus: (message: string) => void
+  onQuotaExhausted?: () => void
 }
 
 class RoomHttpError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
+class QuotaError extends Error {}
 
 export class RoomTransport {
   private socket: WebSocket | null = null
@@ -71,6 +75,7 @@ export class RoomTransport {
     }
     void this.enqueueHttp(message).then(payload => this.receive(payload)).catch(error => {
       if (this.closed) return
+      if (error instanceof QuotaError) { this.stopForQuota(); return }
       // An uncertain POST is never replayed: the next poll retrieves authoritative state.
       if (error instanceof RoomHttpError && error.status < 500) this.options.onStatus(error.message)
       else this.options.onStatus('操作未确认，正在重新同步房间')
@@ -90,6 +95,7 @@ export class RoomTransport {
 
   private receive(payload: RoomPayload) {
     if (this.closed) return
+    if (payload.code === 'QUOTA_EXHAUSTED') { this.stopForQuota(); return }
     if (payload.type === 'room:state' && payload.match) {
       if (payload.revision !== undefined && payload.revision < this.revision) return
       this.revision = payload.revision ?? this.revision
@@ -112,6 +118,11 @@ export class RoomTransport {
     this.options.onStatus('正在重新连接共享房间...')
     void this.poll(true)
   }
+  private stopForQuota() {
+    this.close()
+    this.options.onStatus('今日共享服务额度已用尽，请返回首页使用本机演练；北京时间 08:00 重置')
+    this.options.onQuotaExhausted?.()
+  }
 
   private clearTimers() {
     if (this.connectTimer) clearTimeout(this.connectTimer)
@@ -126,6 +137,7 @@ export class RoomTransport {
       this.receive(payload)
     } catch (error) {
       if (this.closed) return
+      if (error instanceof QuotaError) { this.stopForQuota(); return }
       if (error instanceof RoomHttpError && error.status < 500 && error.status !== 429) {
         this.options.onStatus(error.message)
         this.close()
@@ -165,7 +177,12 @@ export class RoomTransport {
         cache: 'no-store',
         signal: controller.signal,
       })
-      const payload = await response.json() as RoomPayload
+      const raw = await response.text()
+      if (isQuotaFailure(response.status, raw)) throw new QuotaError('Daily quota exhausted')
+      let payload: RoomPayload
+      try { payload = JSON.parse(raw) as RoomPayload } catch {
+        throw new RoomHttpError('共享服务暂时不可用', response.ok ? 502 : response.status)
+      }
       if (!response.ok) throw new RoomHttpError(payload.message ?? '房间连接暂时失败', response.status)
       if (payload.type !== 'room:state') throw new Error('Invalid room response')
       return payload

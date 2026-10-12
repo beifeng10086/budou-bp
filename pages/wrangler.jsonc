@@ -3,6 +3,7 @@
   "name": "wudou-bp-h5",
   "pages_build_output_dir": "../dist",
   "compatibility_date": "2026-09-18",
+  "kv_namespaces": [{ "binding": "QUOTA", "id": "6d753c8c3f7744a2b3545b735a2eac66" }],
   "durable_objects": {
     "bindings": [
       {

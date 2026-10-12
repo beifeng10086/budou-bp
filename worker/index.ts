@@ -5,12 +5,14 @@ import {
 } from '../src/bp'
 import { applyRoomAction as applySharedAction, type RoomAction } from '../src/room-actions'
 import type { DataPackage, MatchState, Seat } from '../src/types'
+import { isQuotaFailure } from '../src/quota'
+import { quotaResponse, updateQuota, type QuotaEnv } from './quota'
 
 const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000
 const MAX_CREATE_MESSAGE_BYTES = 2 * 1024 * 1024
 const MAX_ACTION_MESSAGE_BYTES = 16 * 1024
 
-interface Env {
+interface Env extends QuotaEnv {
   ASSETS: Fetcher
   ROOMS: DurableObjectNamespace
 }
@@ -53,8 +55,12 @@ interface PingMessage {
 type ClientMessage = RoomActionMessage | RoomCreateMessage | LegacyJoinMessage | PingMessage
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(updateQuota(env).catch(() => { console.warn('Quota analytics refresh failed') }))
+  },
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/quota') return quotaResponse(request, env, ctx)
 
     if (url.pathname === '/health') {
       return Response.json({ ok: true, service: 'wudou-bp-cloudflare' })
@@ -73,7 +79,10 @@ export default {
       if (mode !== 'create' && mode !== 'join') return new Response('Invalid room mode', { status: 400 })
 
       const id = env.ROOMS.idFromName(roomCode)
-      return env.ROOMS.get(id).fetch(request)
+      try { return await env.ROOMS.get(id).fetch(request) } catch (error) {
+        if (isQuotaFailure(503, String(error))) return Response.json({ type: 'room:error', code: 'QUOTA_EXHAUSTED', message: '今日共享服务额度已用尽，请使用本机演练' }, { status: 503 })
+        throw error
+      }
     }
 
     return env.ASSETS.fetch(request)

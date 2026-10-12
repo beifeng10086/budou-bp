@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "backup": "node scripts/backup.mjs",
+    "quota:refresh": "node --import tsx scripts/quota-refresh.mjs",
+    "quota:setup": "node --import tsx scripts/quota-setup.mjs",
+    "test:quota": "node --import tsx --test tests/quota.test.ts",
+    "predeploy": "npm run backup",
+    "predeploy:pages": "npm run backup",
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",

@@ -3,11 +3,14 @@
   "name": "wudou-bp",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-18",
+  "vars": { "CF_ACCOUNT_ID": "a36ce5587a5fb626db08ea0a1276ce64" },
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "kv_namespaces": [{ "binding": "QUOTA", "id": "6d753c8c3f7744a2b3545b735a2eac66" }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/ws", "/room", "/health"]
+    "run_worker_first": ["/ws", "/room", "/health", "/quota"]
   },
   "durable_objects": {
     "bindings": [
