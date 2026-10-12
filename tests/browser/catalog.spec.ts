@@ -5,6 +5,11 @@ async function choose(page: import('@playwright/test').Page) {
   await page.locator('.item-tile:not([disabled])').first().click()
   await page.getByRole('button', { name: /确认禁用|确认选择/ }).click()
 }
+async function chooseThree(page: import('@playwright/test').Page) {
+  while (await page.locator('.item-tile:not([disabled]):not([aria-pressed=true])').count() < 3 && await page.getByTitle('下一页', { exact: true }).isEnabled()) await page.getByTitle('下一页', { exact: true }).click()
+  for (let i = 0; i < 3; i++) await page.locator('.item-tile:not([disabled]):not([aria-pressed=true])').first().click()
+  await page.getByRole('button', { name: /确认三个/ }).click()
+}
 for (const width of [320, 390, 844, 1280, 1920]) {
   test('official artwork, preview, orientation and export at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: width === 844 ? 390 : 844 })
@@ -39,6 +44,9 @@ for (const width of [320, 390, 844, 1280, 1920]) {
     await expect(page.locator('.roster-bans .portrait')).toHaveCount(0)
     const artwork = page.locator('.ninja-artwork').first()
     await expect.poll(() => artwork.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+    const artworkFill = await artwork.evaluate(img => ({ fit: getComputedStyle(img).objectFit, height: img.clientHeight, frameHeight: img.parentElement!.clientHeight }))
+    expect(artworkFill.fit).toBe('cover')
+    expect(artworkFill.height).toBeGreaterThanOrEqual(artworkFill.frameHeight - 1)
     await page.screenshot({ path: 'artifacts/arena-' + width + '.png' })
     const confirmBox = await page.getByRole('button', { name: '确认禁用' }).boundingBox()
     expect(confirmBox!.x).toBeGreaterThanOrEqual(0)
@@ -63,9 +71,9 @@ for (const width of [320, 390, 844, 1280, 1920]) {
     await page.screenshot({ path: 'artifacts/scroll-' + width + '.png' })
     for (let stage = 0; stage < 2; stage++) {
       await page.locator('.seat-tabs button').nth(0).click()
-      for (let i = 0; i < 3; i++) await choose(page)
+      await chooseThree(page)
       await page.locator('.seat-tabs button').nth(1).click()
-      for (let i = 0; i < 3; i++) await choose(page)
+      await chooseThree(page)
     }
     await expect(page.locator('.result-entry')).toHaveCount(22)
     const downloadEvent = page.waitForEvent('download')
@@ -127,7 +135,7 @@ test('infinite local series offers host reset or end on exhausted data package',
     for (let stage = 0; stage < 2; stage++) {
       for (let seat = 0; seat < 2; seat++) {
         await page.locator('.seat-tabs button').nth(seat).click()
-        for (let item = 0; item < 3; item++) await choose(page)
+        await chooseThree(page)
       }
     }
     await page.getByRole('button', { name: '北风 获胜', exact: true }).click()

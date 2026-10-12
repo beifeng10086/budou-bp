@@ -149,6 +149,56 @@ test('new settings, own names and host seat swap persist across transports', asy
   await guest.next('room:error')
 })
 
+test('no-timer ordered batches are atomic across WebSocket and HTTPS', async (context) => {
+  const data = JSON.parse(await readFile(catalogPath, 'utf8'))
+  data.summons = data.scrolls.map(item => ({ ...item }))
+  const code = randomCode()
+  const guestToken = randomToken()
+  const host = await connect(code, 'create', randomToken())
+  context.after(() => host.close())
+  const candidate = initialMatch(data)
+  candidate.settings.noTimer = true
+  host.send(JSON.stringify({ type: 'room:create', match: candidate }))
+  assert.equal((await host.next('room:state')).match.settings.noTimer, true)
+  async function request(message) {
+    const url = new URL(baseUrl.replace(/^ws/, 'http'))
+    url.pathname = '/room'
+    url.searchParams.set('room', code); url.searchParams.set('client', guestToken); url.searchParams.set('mode', 'join')
+    const response = await fetch(url, { method: message ? 'POST' : 'GET', headers: message ? { 'Content-Type': 'application/json' } : undefined, body: message ? JSON.stringify({ type: 'room:action', ...message }) : undefined, signal: AbortSignal.timeout(20000) })
+    return { status: response.status, payload: await response.json() }
+  }
+  assert.equal((await request()).payload.seat, 'red')
+  await host.next('room:state')
+  host.send(JSON.stringify({ type: 'room:action', action: 'start' }))
+  let state = await host.next('room:state')
+  assert.equal(state.match.current.phase.expiresAt, null)
+  for (let i = 0; i < 10; i++) {
+    const command = { action: 'ninja', itemId: data.ninjas[i].id }
+    if (state.match.current.phase.turn === 'blue') host.send(JSON.stringify({ type: 'room:action', ...command }))
+    else assert.equal((await request(command)).status, 200)
+    state = await host.next('room:state')
+    assert.equal(state.match.current.phase.expiresAt, null)
+  }
+  const ids = data.scrolls.slice(0, 3).map(item => item.id)
+  for (const phase of ['scroll', 'summon']) {
+    const command = { action: 'timed-batch', round: 1, phase, itemIds: ids }
+    assert.equal((await request({ ...command, itemIds: [ids[0], ids[0], ids[2]] })).status, 403)
+    assert.deepEqual((await request()).payload.match.current[phase === 'scroll' ? 'scrolls' : 'summons'].red, [])
+    host.send(JSON.stringify({ type: 'room:action', ...command, itemIds: [...ids].reverse() }))
+    state = await host.next('room:state')
+    assert.deepEqual(state.match.current[phase === 'scroll' ? 'scrolls' : 'summons'].blue, [...ids].reverse())
+    assert.equal((await request(command)).status, 200)
+    state = await host.next('room:state')
+    assert.deepEqual(state.match.current[phase === 'scroll' ? 'scrolls' : 'summons'].red, ids)
+    if (phase === 'scroll') {
+      assert.equal((await request(command)).status, 403)
+      assert.deepEqual((await request()).payload.match.current.summons.red, [])
+      assert.equal(state.match.current.phase.expiresAt, null)
+    }
+  }
+  assert.equal(state.match.status, 'round-complete')
+})
+
 test('the server alarm randomly completes a ban after the real 60-second deadline', { timeout: 150000 }, async (context) => {
   const data = JSON.parse(await readFile(catalogPath, 'utf8'))
   const code = randomCode()

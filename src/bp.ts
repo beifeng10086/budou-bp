@@ -41,6 +41,7 @@ export function createMatch(data: DataPackage, title: string, roundBan: boolean,
   return {
     settings: {
       title: title.trim() || '武斗对局', roundBan, bestOf: bestOfValue(options.bestOf), turnSeconds: 60,
+      noTimer: options.noTimer === true,
       repeatScrolls: options.repeatScrolls === true, repeatSummons: options.repeatSummons === true,
       playerNames: { blue: normalizeName(options.playerNames?.blue, '1P'), red: normalizeName(options.playerNames?.red, '2P') },
     },
@@ -53,7 +54,11 @@ export function createMatch(data: DataPackage, title: string, roundBan: boolean,
 
 export function startMatch(match: MatchState): MatchState {
   if (match.status !== 'setup' || poolProblem(match)) return match
-  return { ...match, status: 'playing', current: { ...match.current, phase: { ...match.current.phase, expiresAt: Date.now() + 60_000 } } }
+  return { ...match, status: 'playing', current: { ...match.current, phase: { ...match.current.phase, expiresAt: phaseDeadline(match) } } }
+}
+
+function phaseDeadline(match: MatchState): number | null {
+  return match.settings.noTimer ? null : Date.now() + 60_000
 }
 
 export function canSelectNinja(match: MatchState, id: string): boolean {
@@ -83,14 +88,14 @@ export function chooseNinja(match: MatchState, ninjaId: string): MatchState {
     next.bans[current.phase.turn].push(ninjaId)
     const nextIndex = current.phase.index + 1
     next.phase = nextIndex < banOrder.length
-      ? { kind: 'ban', turn: banOrder[nextIndex], index: nextIndex, expiresAt: Date.now() + 60_000 }
-      : { kind: 'pick', turn: pickOrder[0], index: 0, expiresAt: Date.now() + 60_000 }
+      ? { kind: 'ban', turn: banOrder[nextIndex], index: nextIndex, expiresAt: phaseDeadline(match) }
+      : { kind: 'pick', turn: pickOrder[0], index: 0, expiresAt: phaseDeadline(match) }
   } else if (current.phase.kind === 'pick') {
     next.picks[current.phase.turn].push(ninjaId)
     const nextIndex = current.phase.index + 1
     next.phase = nextIndex < pickOrder.length
-      ? { kind: 'pick', turn: pickOrder[nextIndex], index: nextIndex, expiresAt: Date.now() + 60_000 }
-      : { kind: 'scroll', turn: null, index: 0, expiresAt: Date.now() + 60_000 }
+      ? { kind: 'pick', turn: pickOrder[nextIndex], index: nextIndex, expiresAt: phaseDeadline(match) }
+      : { kind: 'scroll', turn: null, index: 0, expiresAt: phaseDeadline(match) }
   }
   return { ...match, current: next }
 }
@@ -105,7 +110,7 @@ export function chooseTimedItem(match: MatchState, itemId: string, seat: Seat): 
     const next = cloneRound(current)
     next.scrolls[seat].push(itemId)
     if (next.scrolls.blue.length === 3 && next.scrolls.red.length === 3) {
-      next.phase = { kind: 'summon', turn: null, index: 0, expiresAt: Date.now() + 60_000 }
+      next.phase = { kind: 'summon', turn: null, index: 0, expiresAt: phaseDeadline(match) }
     }
     return { ...match, current: next }
   }
@@ -122,9 +127,20 @@ export function chooseTimedItem(match: MatchState, itemId: string, seat: Seat): 
   return match
 }
 
+export function chooseTimedBatch(match: MatchState, itemIds: unknown, seat: Seat): MatchState {
+  const kind = match.current.phase.kind
+  if (match.status !== 'playing' || (kind !== 'scroll' && kind !== 'summon')
+    || !Array.isArray(itemIds) || itemIds.length !== 3 || new Set(itemIds).size !== 3
+    || match.current[kind === 'scroll' ? 'scrolls' : 'summons'][seat].length > 0) return match
+  const pool = kind === 'scroll' ? match.data.scrolls : match.data.summons
+  if (!itemIds.every(id => typeof id === 'string' && pool.some(item => item.id === id) && canSelectTimedItem(match, id, seat))) return match
+  // Validate the complete ordered roster before committing any position.
+  return itemIds.reduce((next, id) => chooseTimedItem(next, id, seat), match)
+}
+
 export function expireTimedPhase(match: MatchState, random: () => number = Math.random): MatchState {
   const { phase } = match.current
-  if (match.status !== 'playing' || !phase.expiresAt || Date.now() < phase.expiresAt) return match
+  if (match.settings.noTimer || match.status !== 'playing' || !phase.expiresAt || Date.now() < phase.expiresAt) return match
   if (phase.kind === 'ban' || phase.kind === 'pick') {
     const available = match.data.ninjas.filter(item => canSelectNinja(match, item.id))
     const item = available[Math.min(available.length - 1, Math.floor(random() * available.length))]
@@ -171,7 +187,7 @@ export function startNextRound(match: MatchState): MatchState {
     current: newRound(history.length + 1, match.settings.roundBan, initialBans),
   }
   if (poolProblem(next)) return match
-  next.current.phase.expiresAt = Date.now() + 60_000
+  next.current.phase.expiresAt = phaseDeadline(match)
   return next
 }
 

@@ -34,6 +34,7 @@ export interface RoomSettings {
   bestOf?: BestOf
   playerNames?: Record<Seat, string>
   turnSeconds?: number
+  noTimer?: boolean
   repeatScrolls?: boolean
   repeatSummons?: boolean
 }

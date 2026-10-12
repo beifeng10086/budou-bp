@@ -7,7 +7,7 @@ import ResultList from './components/ResultList.vue'
 import ArenaBoard from './components/ArenaBoard.vue'
 import { RoomTransport, type RoomPayload } from './room-transport'
 import { bestOfLabel, createMatch, endMatch, expireTimedPhase, nextRoundProblem, normalizeName, playerName, recordWinner, resetMatch, seriesFinished, startMatch, startNextRound, swapPlayerNames, poolProblem } from './bp'
-import { applyRoomAction, type RoomAction } from './room-actions'
+import { applyRoomAction, type ActionMessage, type RoomAction } from './room-actions'
 import { copyText } from './clipboard'
 import type { BestOf, DataPackage, MatchState, Seat, StoredPackage } from './types'
 import { isQuotaFailure, nextQuotaReset, quotaExhausted, validQuota, type QuotaSnapshot } from './quota'
@@ -64,6 +64,7 @@ const bestOf = ref<BestOf>(3)
 const roundBan = ref(true)
 const repeatScrolls = ref(false)
 const repeatSummons = ref(false)
+const noTimer = ref(false)
 const nickname = ref(localStorage.getItem('wudou-player-name') ?? '')
 const secondName = ref('')
 const joinCode = ref('')
@@ -97,7 +98,7 @@ const wins = computed(() => ({ blue: rounds.value.filter(r => r.winner === 'blue
 const exhausted = computed(() => nextRoundProblem(match.value))
 const inviteUrl = computed(() => location.origin + location.pathname + '?room=' + roomCode.value)
 const artworkLibrary = computed(() => packages.value.flatMap(pack => pack.ninjas).filter(item => item.artwork))
-const createSettings = () => ({ bestOf: bestOf.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '1P'), red: normalizeName(secondName.value, '2P') } })
+const createSettings = () => ({ bestOf: bestOf.value, noTimer: noTimer.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '1P'), red: normalizeName(secondName.value, '2P') } })
 
 onMounted(() => {
   try { const stored: unknown = JSON.parse(localStorage.getItem('wudou-quota-snapshot') ?? 'null'); if (validQuota(stored)) quota.value = stored } catch { /* Missing cache is normal. */ }
@@ -145,11 +146,13 @@ function createLocalMatch() {
   screen.value = 'match'; connectionLabel.value = ''
 }
 function createOnlineRoom() {
+  if (onlineBlocked.value) { connectionLabel.value = '今日共享服务额度已用尽，请使用本机演练；北京时间 08:00 重置'; return }
   saveNickname()
   const code = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
   openRoom('create', code, createMatch(selectedPackage.value, title.value, roundBan.value, createSettings()))
 }
 function joinOnlineRoom() {
+  if (onlineBlocked.value) { connectionLabel.value = '今日共享服务额度已用尽，请使用本机演练；北京时间 08:00 重置'; return }
   saveNickname()
   const code = joinCode.value.trim().toUpperCase()
   if (!/^[A-Z0-9]{5,8}$/.test(code)) { connectionLabel.value = '请输入 5–8 位房间码'; return }
@@ -189,7 +192,7 @@ async function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchS
   })
   orientation.value = 'landscape'; transport.start()
 }
-function action(action: RoomAction, options: { itemId?: string; winner?: Seat; name?: string; seat?: Seat } = {}) {
+function action(action: RoomAction, options: Omit<ActionMessage, 'action'> & { seat?: Seat } = {}) {
   if (online.value) transport?.send({ type: 'room:action', action, ...options })
   else match.value = applyRoomAction(match.value, { action, ...options }, options.seat ?? 'blue') ?? match.value
 }
@@ -240,31 +243,32 @@ async function exportImage() {
         <div class="quota-heading"><strong>{{ onlineBlocked ? '今日共享额度已用尽' : '今日共享服务额度' }}</strong><span>北京时间 08:00 重置</span></div>
         <template v-if="quota && quota.resetAt > quotaClock">
           <div class="quota-primary"><span>联网请求预计剩余</span><strong>{{ Math.max(0, Math.floor((quota.metrics.find(m => m.id === 'requests')?.limit ?? 100000) - (quota.metrics.find(m => m.id === 'requests')?.used ?? 0))).toLocaleString() }} <small>次</small></strong></div>
-          <div class="quota-metrics"><div v-for="metric in quota.metrics" :key="metric.id"><div><span>{{ metric.label }}</span><span>{{ Math.ceil(metric.used).toLocaleString() }} / {{ metric.limit.toLocaleString() }} {{ metric.unit }}</span></div><progress :value="Math.min(metric.used, metric.limit)" :max="metric.limit" :aria-label="metric.label" /></div></div>
-          <p>{{ quotaStale || quotaUnavailable ? '统计暂未更新 · ' : '' }}{{ quota.automatic ? '官方统计（有延迟）' : '官方统计快照（自动更新尚未接通）' }} · {{ quotaUpdated }}</p>
+          <p class="quota-delay">{{ quotaStale || quotaUnavailable ? '统计暂未更新 · ' : '' }}官方统计有延迟</p>
+          <details class="quota-details"><summary>额度详情</summary><div class="quota-metrics"><div v-for="metric in quota.metrics" :key="metric.id"><div><span>{{ metric.label }}</span><span>{{ Math.ceil(metric.used).toLocaleString() }} / {{ metric.limit.toLocaleString() }} {{ metric.unit }}</span></div><progress :value="Math.min(metric.used, metric.limit)" :max="metric.limit" :aria-label="metric.label" /></div></div><p>{{ quota.automatic ? '官方统计' : '官方统计快照（自动更新尚未接通）' }} · {{ quotaUpdated }}</p></details>
         </template>
         <p v-else>{{ quotaLoading ? '正在读取官方统计…' : '当前剩余额度未知' }}</p>
         <p v-if="onlineBlocked" role="status">共享房间暂停，本机演练可用。</p>
       </section>
-      <label class="field-label name-field">你的圈名（选填）<input v-model="nickname" class="text-input" maxlength="16" placeholder="填写游戏名 / 圈名" autocomplete="nickname" /></label>
-      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :disabled="onlineBlocked" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
-      <p v-if="connectionLabel" class="connection-note" role="status">{{ connectionLabel }}</p>
-      <div class="setup-grid">
-        <label class="field-label">对局名称<input v-model="title" class="text-input" maxlength="20" /></label>
-        <label class="field-label">赛制<select v-model="bestOf" class="select-input" aria-label="赛制"><option :value="3">BO3</option><option :value="5">BO5</option><option :value="7">BO7</option><option :value="0">BO 无限</option></select></label>
+      <div class="player-fields">
+        <label class="field-label">你的圈名（选填）<input v-model="nickname" class="text-input" maxlength="16" placeholder="填写游戏名 / 圈名" autocomplete="nickname" /></label>
         <label class="field-label">本机 2P 圈名（选填）<input v-model="secondName" class="text-input" maxlength="16" placeholder="默认 2P" /></label>
+      </div>
+      <div class="setup-grid main-settings">
+        <label class="field-label">赛制<select v-model="bestOf" class="select-input" aria-label="赛制"><option :value="3">BO3</option><option :value="5">BO5</option><option :value="7">BO7</option><option :value="0">BO 无限</option></select></label>
         <label class="field-label">数据包<select v-model="selectedPackageId" class="select-input" aria-label="数据包"><option v-for="pack in packages" :key="pack.id" :value="pack.id">{{ pack.name }} · {{ pack.updatedAt }}</option></select></label>
-        <p class="data-note">{{ selectedPackage.source }} · {{ selectedPackage.ninjas.length }} 忍者 / {{ selectedPackage.scrolls.length }} 秘卷 / {{ selectedPackage.summons.length }} 通灵</p>
         <p v-if="catalogLoading" class="data-note" role="status">资料加载中…</p>
         <p v-if="catalogError" class="data-note">{{ catalogError }} <button class="text-command" @click="loadCatalog">重试</button></p>
-        <label class="import-control"><CloudUpload :size="19" />导入数据包<input type="file" accept="application/json,.json" @change="handleImport" /></label>
       </div>
-      <div class="rules-settings">
+      <div class="data-actions"><span>{{ selectedPackage.ninjas.length }} 忍者 · {{ selectedPackage.scrolls.length }} 秘卷 · {{ selectedPackage.summons.length }} 通灵</span><label class="import-control"><CloudUpload :size="17" />导入数据包<input type="file" accept="application/json,.json" @change="handleImport" /></label></div>
+      <div class="home-actions"><button class="button primary" :disabled="catalogLoading" @click="createLocalMatch"><Swords :size="19" />本机演练</button><button class="button secondary" :class="{ 'online-unavailable': onlineBlocked }" :disabled="catalogLoading" @click="createOnlineRoom"><Users :size="19" />创建共享房间</button></div>
+      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :class="{ 'online-unavailable': onlineBlocked }" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
+      <p v-if="connectionLabel" class="connection-note" role="status">{{ connectionLabel }}</p>
+      <details class="advanced-settings"><summary>对局设置 <span>{{ roundBan ? '小局 Ban' : '首局 Ban' }} · {{ noTimer ? '无计时' : '60 秒' }}</span></summary><label class="field-label">对局名称<input v-model="title" class="text-input" maxlength="20" /></label><div class="rules-settings">
+        <label><span>无计时</span><input v-model="noTimer" type="checkbox" role="switch" /></label>
         <label><span>每小局重新 Ban</span><input v-model="roundBan" type="checkbox" role="switch" /></label>
         <label><span>秘卷跨小局可重复</span><input v-model="repeatScrolls" type="checkbox" role="switch" /></label>
         <label><span>通灵跨小局可重复</span><input v-model="repeatSummons" type="checkbox" role="switch" /></label>
-      </div>
-      <div class="home-actions"><button class="button primary" :disabled="catalogLoading" @click="createLocalMatch"><Swords :size="19" />本机演练</button><button class="button secondary" :disabled="catalogLoading || onlineBlocked" @click="createOnlineRoom"><Users :size="19" />创建共享房间</button></div>
+      </div><p class="data-source">{{ selectedPackage.source }}</p></details>
     </section>
     <section v-else class="match-screen">
       <header class="match-header">
@@ -276,12 +280,12 @@ async function exportImage() {
       <section v-if="match.status === 'setup'" class="ready-panel">
         <span class="ready-state" :class="{ joined: !online || players.red }">{{ online ? players.red ? '2P 已加入' : '等待 2P 加入' : '本机双方就绪' }}</span>
         <div class="ready-names"><label v-for="seat in (['blue', 'red'] as const)" :key="seat" class="field-label"><span>{{ seat === 'blue' ? '1P · 房主' : '2P' }}</span><input class="text-input" :value="playerName(match, seat)" maxlength="16" :disabled="online && onlineSeat !== seat" @change="rename($event, seat)" /></label></div>
-        <p>{{ bestOfLabel(match) }} · {{ match.settings.roundBan ? '每小局 Ban' : '首局 Ban' }} · 全阶段 60 秒</p>
+        <p>{{ bestOfLabel(match) }} · {{ match.settings.roundBan ? '每小局 Ban' : '首局 Ban' }} · {{ match.settings.noTimer ? '无计时' : '全阶段 60 秒' }}</p>
         <p>秘卷{{ match.settings.repeatScrolls ? '可重复' : '不可重复' }} · 通灵{{ match.settings.repeatSummons ? '可重复' : '不可重复' }}</p>
         <div v-if="isHost" class="ready-actions"><button class="button primary" :disabled="online && !players.red" @click="beginMatch"><Swords :size="18" />开始 BP</button><button class="button secondary" :disabled="online && !players.red" @click="swapSeats"><Users :size="18" />交换 1P / 2P</button></div>
         <p v-else>等待 1P 开始 BP</p><p v-if="!online && connectionLabel" role="status">{{ connectionLabel }}</p>
       </section>
-      <ArenaBoard v-if="match.status === 'playing'" :match="match" :seconds="secondsLeft" :online="online" :seat="onlineSeat" :wins="wins" :artworks="artworkLibrary" :portrait="mobile && orientation === 'portrait'" @choose="(itemId, seat, timed) => action(timed ? 'timed' : 'ninja', { itemId, seat })" />
+      <ArenaBoard v-if="match.status === 'playing'" :match="match" :seconds="secondsLeft" :online="online" :seat="onlineSeat" :wins="wins" :artworks="artworkLibrary" :portrait="mobile && orientation === 'portrait'" @choose="(itemId, seat, timed) => action(timed ? 'timed' : 'ninja', { itemId, seat })" @batch="(itemIds, seat, phase, round) => action('timed-batch', { itemIds, seat, phase, round })" />
       <section v-if="current.phase.kind === 'complete'" ref="exportTarget" class="result-board">
         <div class="result-heading"><span>{{ bestOfLabel(match) }} · 第 {{ current.number }} 局完整阵容 · {{ wins.blue }} : {{ wins.red }}</span><strong>{{ match.settings.title }}</strong></div>
         <div class="result-columns"><div v-for="seat in (['blue', 'red'] as const)" :key="seat" class="result-side" :class="seat"><h2><small>{{ seat === 'blue' ? '1P' : '2P' }}</small> {{ playerName(match, seat) }}</h2><ResultList title="禁用" :items="current.bans[seat]" :source="match.data.ninjas" /><ResultList title="忍者" :items="current.picks[seat]" :source="match.data.ninjas" /><ResultList title="秘卷" :items="current.scrolls[seat]" :source="match.data.scrolls" /><ResultList title="通灵" :items="current.summons[seat]" :source="match.data.summons" /></div></div>

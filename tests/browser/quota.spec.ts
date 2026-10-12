@@ -1,11 +1,18 @@
 import { test, expect } from '@playwright/test'
 
 const snapshot = (used: number) => ({ day: new Date().toISOString().slice(0, 10), updatedAt: Date.now(), resetAt: (Math.floor(Date.now() / 86400000) + 1) * 86400000, automatic: true, metrics: [{ id: 'requests', label: '联网请求', used, limit: 100000, unit: '次' }] })
-test('exhaustion disables shared rooms and preserves local BP', async ({ page }) => {
+test('exhaustion explains blocked shared entry without network attempts and preserves local BP', async ({ page }) => {
+  let attempts = 0
+  page.on('websocket', () => attempts++)
+  page.on('request', request => { if (new URL(request.url()).pathname === '/room') attempts++ })
   await page.route('**/quota', route => route.fulfill({ json: snapshot(100000) }))
   await page.goto('/')
-  await expect(page.getByRole('button', { name: '创建共享房间' })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '加入房间', exact: true })).toBeDisabled()
+  await expect(page.locator('.quota-strip')).toContainText('今日共享额度已用尽')
+  await page.getByRole('button', { name: '创建共享房间' }).click()
+  await expect(page.locator('.connection-note')).toContainText('请使用本机演练')
+  await page.getByRole('button', { name: '加入房间', exact: true }).click()
+  await expect(page.locator('.connection-note')).toContainText('08:00 重置')
+  expect(attempts).toBe(0)
   await page.getByPlaceholder('填写游戏名 / 圈名').fill('额度测试')
   await page.getByRole('button', { name: '本机演练' }).click()
   await expect(page.getByRole('button', { name: '开始 BP' })).toBeEnabled()
@@ -21,11 +28,11 @@ test('Cloudflare HTML quota error stops fallback polling and persists across rel
   await page.goto('/')
   await page.getByPlaceholder('填写游戏名 / 圈名').fill('网络测试')
   await page.getByRole('button', { name: '创建共享房间' }).click()
-  await expect(page.getByRole('button', { name: '创建共享房间' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '创建共享房间' })).toHaveClass(/online-unavailable/)
   await page.waitForTimeout(4000)
   expect(attempts).toBe(1)
   await page.reload()
-  await expect(page.getByRole('button', { name: '创建共享房间' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '创建共享房间' })).toHaveClass(/online-unavailable/)
   expect(quotaReads).toBe(1)
 })
 
@@ -48,4 +55,7 @@ test('yesterday exhaustion cache unlocks after the next UTC day', async ({ page 
   await page.goto('/')
   await expect(page.getByRole('button', { name: '创建共享房间' })).toBeEnabled()
   await expect(page.getByRole('button', { name: '加入房间', exact: true })).toBeEnabled()
+  await expect(page.locator('.quota-metrics')).not.toBeVisible()
+  await page.locator('.quota-details summary').click()
+  await expect(page.locator('.quota-metrics')).toBeVisible()
 })

@@ -41,7 +41,7 @@
 .artwork-slot { display: flex; position: relative; align-items: center; justify-content: center; min-width: 0; min-height: 0; overflow: hidden; border-left: 1px solid #41494a; padding: 5px 4px 33px; }
 .artwork-slot.pending { background: #303a3c; box-shadow: inset 0 -3px var(--team); }
 .artwork-slot.previewing { outline: 1px dashed #f3d285; outline-offset: -3px; }
-.ninja-artwork { height: 100%; width: 100%; object-fit: contain; }
+.ninja-artwork { position: absolute; inset: 0; height: 100%; width: 100%; object-fit: cover; object-position: 50% 30%; }
 .artwork-slot > strong { position: absolute; bottom: 6px; left: 4px; right: 4px; text-align: center; font-size: 12px; line-height: 1.2; color: #fff4d7; overflow-wrap: anywhere; background: #202425eb; }
 .artwork-slot > small { position: absolute; top: 5px; left: 5px; color: #fff1ae; font-size: 10px; }
 .artwork-slot .empty-slot { color: #718080; font-family: Georgia, serif; font-size: 62px; opacity: .6; width: auto; height: auto; border: 0; background: transparent; }
@@ -97,7 +97,7 @@
   .battle .match-header { grid-template-columns: 28px 1fr 28px; height: 30px; padding-bottom: 0; }
   .battle .match-header .icon-command { height: 27px; width: 27px; }
   .battle .match-title span { display: inline; margin-right: 8px; }.battle .match-title strong { display: inline; font-size: 13px; }
-  .arena-board { height: calc(100dvh - 42px); max-height: none; grid-template-rows: 49px minmax(50px, 1fr) 28px 29px 122px 36px; gap: 3px; }
+  .arena-board { height: calc(100dvh - 42px); max-height: none; grid-template-rows: 42px minmax(60px, 1fr) 24px 26px 100px 32px; gap: 3px; }
   .share-strip + .arena-board { height: calc(100dvh - 71px); }
   .arena-player strong { font-size: 15px; }.arena-player b { font-size: 21px; }
   .arena-scoreboard .stage-status strong { font-size: 13px; }.arena-timer { font-size: 24px; }
@@ -113,7 +113,7 @@
   .mobile-landscape.arena-play .match-header { grid-template-columns: 28px 1fr 28px; height: 30px; padding-bottom: 0; }
   .mobile-landscape.arena-play .match-header .icon-command { height: 27px; width: 27px; }
   .mobile-landscape.arena-play .match-title span { display: inline; margin-right: 8px; }.mobile-landscape.arena-play .match-title strong { display: inline; font-size: 13px; }
-  .mobile-landscape.arena-play .arena-board { height: calc(100dvw - 42px); max-height: none; grid-template-rows: 49px minmax(50px, 1fr) 28px 29px 122px 36px; gap: 3px; }
+  .mobile-landscape.arena-play .arena-board { height: calc(100dvw - 42px); max-height: none; grid-template-rows: 42px minmax(60px, 1fr) 24px 26px 100px 32px; gap: 3px; }
   .mobile-landscape.arena-play .share-strip + .arena-board { height: calc(100dvw - 71px); }
   .mobile-landscape.arena-play .arena-player strong { font-size: 15px; }.mobile-landscape.arena-play .arena-player b { font-size: 21px; }
   .mobile-landscape.arena-play .stage-status strong { font-size: 13px; }.mobile-landscape.arena-play .arena-timer { font-size: 24px; }
@@ -137,6 +137,30 @@
 .battle .timed-stage .artwork-slot { padding-bottom: 58px; }
 .battle .timed-stage .artwork-slot > strong { bottom: 43px; }
 .battle .timed-overlay span { min-width: 0; }
+.timed-overlay { border: 0; color: #e9dfb9; cursor: pointer; font: inherit; }
+.timed-overlay:disabled { cursor: default; opacity: 1; }
+.timed-overlay b { font-size: 10px; flex-shrink: 0; }
+.arena-timer.untimed { font-size: 16px; line-height: 1.8; }
+.player-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 18px; }
+.main-settings { grid-template-columns: 100px minmax(0, 1fr); border: 0; padding-bottom: 8px; gap: 12px; }
+.main-settings .data-note { grid-column: 1 / -1; margin: 0; }
+.data-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.data-actions > span, .data-source { font-size: 12px; color: #647777; }
+.data-actions .import-control { min-height: 32px; font-size: 12px; }
+.advanced-settings { border-bottom: 1px solid #cad5d3; margin-top: 12px; }
+.advanced-settings summary, .quota-details summary { cursor: pointer; padding: 12px 0; font-size: 14px; font-weight: 700; color: #405352; }
+.advanced-settings summary span { float: right; font-size: 12px; font-weight: 400; }
+.advanced-settings > .field-label { margin-top: 8px; }
+.advanced-settings .data-source { margin: 12px 0; overflow-wrap: anywhere; }
+.quota-details summary { font-size: 12px; padding: 8px 0; }
+.home-screen .quota-strip { margin-bottom: 16px; padding: 10px 0; }
+.home-screen .quota-primary { margin: 7px 0 0; }
+.home-screen .quota-delay { margin-top: 4px; font-size: 11px; }
+.home-screen .brand-row { margin-bottom: 16px; }
+.home-screen .home-actions { margin-top: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.home-screen .prominent-join { margin: 16px 0 0; padding: 14px 0; }
+.button.online-unavailable { background: #e3e8e7; color: #677573; border-color: #bcc8c5; }
+@media (max-width: 390px) { .home-screen .button { font-size: 13px; padding-inline: 8px; gap: 5px; }.player-fields { gap: 8px; }.main-settings { grid-template-columns: 80px minmax(0, 1fr); gap: 8px; } }
 @media (max-height: 540px) and (orientation: landscape) {
   .battle .timed-stage .artwork-slot { padding-bottom: 37px; }
   .battle .timed-stage .artwork-slot > strong { bottom: 26px; font-size: 9px; }

@@ -36,6 +36,9 @@ interface RoomActionMessage {
   action?: RoomAction
   name?: string
   itemId?: string
+  itemIds?: string[]
+  round?: number
+  phase?: 'scroll' | 'summon'
   winner?: Seat
 }
 
