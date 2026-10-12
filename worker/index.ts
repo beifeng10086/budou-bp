@@ -1,13 +1,9 @@
 import {
-  chooseNinja,
-  chooseTimedItem,
   createMatch,
   expireTimedPhase,
-  recordWinner,
-  resetMatch,
-  startMatch,
-  startNextRound,
+  renamePlayer,
 } from '../src/bp'
+import { applyRoomAction as applySharedAction, type RoomAction } from '../src/room-actions'
 import type { DataPackage, MatchState, Seat } from '../src/types'
 
 const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000
@@ -35,7 +31,8 @@ interface SocketAttachment {
 
 interface RoomActionMessage {
   type: 'room:action'
-  action?: 'start' | 'ninja' | 'timed' | 'winner' | 'next' | 'new-match' | 'swap-seats'
+  action?: RoomAction
+  name?: string
   itemId?: string
   winner?: Seat
 }
@@ -60,7 +57,7 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/health') {
-      return Response.json({ ok: true, service: 'budou-bp-cloudflare' })
+      return Response.json({ ok: true, service: 'wudou-bp-cloudflare' })
     }
 
     if (url.pathname === '/ws' || url.pathname === '/room') {
@@ -114,6 +111,7 @@ export class Room {
         if (mode === 'create') return new Response('Room already exists', { status: 409 })
         if (this.meta.seats.red) return new Response('Room is full', { status: 409 })
         this.meta.seats.red = token
+        this.setJoinName(url.searchParams.get('name'))
         this.meta.revision = (this.meta.revision ?? 0) + 1
         this.meta.lastActiveAt = Date.now()
         await this.persistMeta()
@@ -160,6 +158,7 @@ export class Room {
       if (url.searchParams.get('mode') === 'create') return error('房间码已存在，请重新创建', 409)
       if (this.meta.seats.red) return error('房间已满，只允许两名玩家', 409)
       this.meta.seats.red = token
+      this.setJoinName(url.searchParams.get('name'))
       this.meta.lastActiveAt = Date.now()
       this.meta.revision = (this.meta.revision ?? 0) + 1
       await this.persistMeta()
@@ -256,7 +255,7 @@ export class Room {
     if (!candidate || !validDataPackage(candidate.data)) return '数据包格式无效'
     const title = typeof candidate.settings?.title === 'string' ? candidate.settings.title.slice(0, 40) : 'BO3 对局'
     const roundBan = candidate.settings?.roundBan !== false
-    const cleanMatch = createMatch(candidate.data, title, roundBan)
+    const cleanMatch = createMatch(candidate.data, title, roundBan, candidate.settings)
     const now = Date.now()
     this.data = candidate.data
     this.meta = {
@@ -312,6 +311,7 @@ export class Room {
     if (!seat) return undefined
     return {
       type: 'room:state',
+      serverTime: Date.now(),
       revision: this.meta.revision ?? 0,
       match: this.meta.match,
       ...(includeData && this.data ? { data: this.data } : {}),
@@ -350,6 +350,10 @@ export class Room {
     if (this.meta) await this.state.storage.put('meta', this.meta)
   }
 
+  private setJoinName(name: string | null): void {
+    if (this.meta && this.data) this.meta.match = compactMatch(renamePlayer(inflateMatch(this.meta.match, this.data), 'red', name))
+  }
+
   private async scheduleAlarm(): Promise<void> {
     if (!this.meta) return
     const phaseDeadline = this.meta.match.current.phase.expiresAt
@@ -359,33 +363,7 @@ export class Room {
 }
 
 function applyRoomAction(match: MatchState, message: RoomActionMessage, seat: Seat): MatchState | undefined {
-  const isHost = seat === 'blue'
-  switch (message.action) {
-    case 'start':
-      return isHost && match.status === 'setup' ? startMatch(match) : undefined
-    case 'ninja':
-      if (match.status !== 'playing' || match.current.phase.turn !== seat || !message.itemId) return undefined
-      if (!match.data.ninjas.some((item) => item.id === message.itemId)) return undefined
-      return changed(match, chooseNinja(match, message.itemId))
-    case 'timed': {
-      if (match.status !== 'playing' || !message.itemId) return undefined
-      const pool = match.current.phase.kind === 'scroll' ? match.data.scrolls
-        : match.current.phase.kind === 'summon' ? match.data.summons : undefined
-      if (!pool?.some((item) => item.id === message.itemId)) return undefined
-      return changed(match, chooseTimedItem(match, message.itemId, seat))
-    }
-    case 'winner':
-      return isHost && (message.winner === 'blue' || message.winner === 'red')
-        ? changed(match, recordWinner(match, message.winner)) : undefined
-    case 'next':
-      return isHost ? changed(match, startNextRound(match)) : undefined
-    case 'new-match':
-      return isHost && match.status === 'match-complete' ? resetMatch(match) : undefined
-    case 'swap-seats':
-      return isHost && match.status === 'setup' ? match : undefined
-    default:
-      return undefined
-  }
+  return applySharedAction(match, message, seat)
 }
 
 function compactMatch(match: MatchState): MatchCore {
@@ -396,10 +374,6 @@ function compactMatch(match: MatchState): MatchCore {
 function inflateMatch(match: MatchCore, data: DataPackage): MatchState {
   const { dataPackageId: _dataPackageId, ...state } = match
   return { ...state, data }
-}
-
-function changed(match: MatchState, next: MatchState): MatchState | undefined {
-  return next === match ? undefined : next
 }
 
 function seatForToken(meta: RoomMeta, token: string): Seat | undefined {
