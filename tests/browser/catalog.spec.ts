@@ -5,7 +5,7 @@ async function choose(page: import('@playwright/test').Page) {
   await page.locator('.item-tile:not([disabled])').first().click()
   await page.getByRole('button', { name: /确认禁用|确认选择/ }).click()
 }
-for (const width of [320, 390, 844, 1280]) {
+for (const width of [320, 390, 844, 1280, 1920]) {
   test('official artwork, preview, orientation and export at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: width === 844 ? 390 : 844 })
     const errors: string[] = []
@@ -20,6 +20,20 @@ for (const width of [320, 390, 844, 1280]) {
     await expect(page.getByLabel('1P阵容')).toBeVisible()
     await expect(page.getByLabel('2P阵容')).toBeVisible()
     await expect(page.locator('.arena-player.blue strong')).toHaveText('北风')
+    const avatarLayout = await page.locator('.arena-pool .portrait img').first().evaluate(img => {
+      const portrait = img.parentElement!
+      const imageStyle = getComputedStyle(img)
+      return { fit: imageStyle.objectFit, imageHeight: img.clientHeight, portraitHeight: portrait.clientHeight }
+    })
+    expect(avatarLayout.fit).toBe('contain')
+    expect(avatarLayout.imageHeight).toBeGreaterThan(0)
+    expect(avatarLayout.imageHeight).toBeLessThanOrEqual(avatarLayout.portraitHeight)
+    if (width >= 1280) {
+      const artworkHeight = await page.locator('.artwork-stage').evaluate(el => el.clientHeight)
+      const poolHeight = await page.locator('.arena-catalog').evaluate(el => el.clientHeight)
+      expect(artworkHeight).toBeLessThanOrEqual(240)
+      expect(poolHeight).toBeGreaterThanOrEqual(220)
+    }
     await page.locator('.item-tile:not([disabled])').first().click()
     await expect(page.locator('.stage-status strong')).toHaveText('1P 禁用忍者')
     await expect(page.locator('.roster-bans .portrait')).toHaveCount(0)

@@ -97,7 +97,7 @@ const wins = computed(() => ({ blue: rounds.value.filter(r => r.winner === 'blue
 const exhausted = computed(() => nextRoundProblem(match.value))
 const inviteUrl = computed(() => location.origin + location.pathname + '?room=' + roomCode.value)
 const artworkLibrary = computed(() => packages.value.flatMap(pack => pack.ninjas).filter(item => item.artwork))
-const createSettings = () => ({ bestOf: bestOf.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '玩家一'), red: normalizeName(secondName.value, '玩家二') } })
+const createSettings = () => ({ bestOf: bestOf.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '1P'), red: normalizeName(secondName.value, '2P') } })
 
 onMounted(() => {
   try { const stored: unknown = JSON.parse(localStorage.getItem('wudou-quota-snapshot') ?? 'null'); if (validQuota(stored)) quota.value = stored } catch { /* Missing cache is normal. */ }
@@ -132,14 +132,12 @@ async function loadCatalog() {
   } catch { catalogError.value = '官网资料包加载失败，可重试或使用演示包。' }
   finally { catalogLoading.value = false }
 }
-function requireName() {
-  if (!nickname.value.trim()) { connectionLabel.value = '请先填写你的圈名'; return false }
-  nickname.value = normalizeName(nickname.value, '玩家')
+function saveNickname() {
+  nickname.value = normalizeName(nickname.value, '')
   localStorage.setItem('wudou-player-name', nickname.value)
-  return true
 }
 function createLocalMatch() {
-  if (!requireName()) return
+  saveNickname()
   connectionAttempt++
   transport?.close(); transport = null
   online.value = false; roomCode.value = ''; orientation.value = 'landscape'
@@ -147,12 +145,12 @@ function createLocalMatch() {
   screen.value = 'match'; connectionLabel.value = ''
 }
 function createOnlineRoom() {
-  if (!requireName()) return
+  saveNickname()
   const code = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
   openRoom('create', code, createMatch(selectedPackage.value, title.value, roundBan.value, createSettings()))
 }
 function joinOnlineRoom() {
-  if (!requireName()) return
+  saveNickname()
   const code = joinCode.value.trim().toUpperCase()
   if (!/^[A-Z0-9]{5,8}$/.test(code)) { connectionLabel.value = '请输入 5–8 位房间码'; return }
   openRoom('join', code)
@@ -173,7 +171,7 @@ async function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchS
   const wsUrl = import.meta.env.VITE_WS_URL || (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.hostname + (location.port === '5173' ? ':8787' : location.port ? ':' + location.port : '') + '/ws'
   const endpoint = new URL(wsUrl)
   endpoint.searchParams.set('room', code); endpoint.searchParams.set('mode', mode); endpoint.searchParams.set('client', token)
-  endpoint.searchParams.set('name', normalizeName(nickname.value, '玩家二'))
+  endpoint.searchParams.set('name', normalizeName(nickname.value, mode === 'create' ? '1P' : '2P'))
   transport = new RoomTransport({
     endpoint: endpoint.toString(), mode, match: newMatch,
     onQuotaExhausted: markQuotaExhausted,
@@ -248,13 +246,13 @@ async function exportImage() {
         <p v-else>{{ quotaLoading ? '正在读取官方统计…' : '当前剩余额度未知' }}</p>
         <p v-if="onlineBlocked" role="status">共享房间暂停，本机演练可用。</p>
       </section>
-      <label class="field-label name-field">你的圈名<input v-model="nickname" class="text-input" maxlength="16" placeholder="填写游戏名 / 圈名" autocomplete="nickname" /></label>
+      <label class="field-label name-field">你的圈名（选填）<input v-model="nickname" class="text-input" maxlength="16" placeholder="填写游戏名 / 圈名" autocomplete="nickname" /></label>
       <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :disabled="onlineBlocked" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
       <p v-if="connectionLabel" class="connection-note" role="status">{{ connectionLabel }}</p>
       <div class="setup-grid">
         <label class="field-label">对局名称<input v-model="title" class="text-input" maxlength="20" /></label>
         <label class="field-label">赛制<select v-model="bestOf" class="select-input" aria-label="赛制"><option :value="3">BO3</option><option :value="5">BO5</option><option :value="7">BO7</option><option :value="0">BO 无限</option></select></label>
-        <label class="field-label">本机 2P 圈名<input v-model="secondName" class="text-input" maxlength="16" placeholder="玩家二" /></label>
+        <label class="field-label">本机 2P 圈名（选填）<input v-model="secondName" class="text-input" maxlength="16" placeholder="默认 2P" /></label>
         <label class="field-label">数据包<select v-model="selectedPackageId" class="select-input" aria-label="数据包"><option v-for="pack in packages" :key="pack.id" :value="pack.id">{{ pack.name }} · {{ pack.updatedAt }}</option></select></label>
         <p class="data-note">{{ selectedPackage.source }} · {{ selectedPackage.ninjas.length }} 忍者 / {{ selectedPackage.scrolls.length }} 秘卷 / {{ selectedPackage.summons.length }} 通灵</p>
         <p v-if="catalogLoading" class="data-note" role="status">资料加载中…</p>

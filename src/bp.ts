@@ -34,7 +34,7 @@ export function bestOfLabel(match: MatchState): string {
 }
 
 export function playerName(match: MatchState, seat: Seat): string {
-  return normalizeName(match.settings.playerNames?.[seat], seat === 'blue' ? '玩家一' : '玩家二')
+  return normalizeName(match.settings.playerNames?.[seat], seat === 'blue' ? '1P' : '2P')
 }
 
 export function createMatch(data: DataPackage, title: string, roundBan: boolean, options: Partial<RoomSettings> = {}): MatchState {
@@ -42,7 +42,7 @@ export function createMatch(data: DataPackage, title: string, roundBan: boolean,
     settings: {
       title: title.trim() || '武斗对局', roundBan, bestOf: bestOfValue(options.bestOf), turnSeconds: 60,
       repeatScrolls: options.repeatScrolls === true, repeatSummons: options.repeatSummons === true,
-      playerNames: { blue: normalizeName(options.playerNames?.blue, '玩家一'), red: normalizeName(options.playerNames?.red, '玩家二') },
+      playerNames: { blue: normalizeName(options.playerNames?.blue, '1P'), red: normalizeName(options.playerNames?.red, '2P') },
     },
     data,
     status: 'setup',
