@@ -1,5 +1,7 @@
 # Render 免费部署与维护
 
+如果 GitHub 登录或授权仍超时，可按 [Gitee 与 Render 免费部署](./Gitee与Render免费部署.md) 尝试备用方案。该方案通过公开 Git 地址部署，后续更新需要手动触发。
+
 Cloudflare `workers.dev` 在当前电脑和手机移动网络均无法访问，因此备用公网方案改为 Render Free Web Service。Render 的 `onrender.com` 应用域名已在当前电脑实测可达，服务支持 HTTPS 和 WebSocket，可以直接运行本项目现有的 Node 房间服务。
 
 ## 免费层限制
