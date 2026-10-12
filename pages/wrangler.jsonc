@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "budou-bp-h5",
+  "name": "wudou-bp-h5",
   "pages_build_output_dir": "../dist",
   "compatibility_date": "2026-09-18",
   "durable_objects": {
@@ -8,7 +8,7 @@
       {
         "name": "ROOMS",
         "class_name": "Room",
-        "script_name": "budou-bp"
+        "script_name": "wudou-bp"
       }
     ]
   }

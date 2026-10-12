@@ -109,6 +109,70 @@ test('HTTPS fallback shares rooms, permissions and state with WebSocket players'
   assert.equal(restored.payload.data.id, data.id)
 })
 
+test('new settings, own names and host seat swap persist across transports', async (context) => {
+  const data = JSON.parse(await readFile(catalogPath, 'utf8'))
+  const code = randomCode()
+  const hostToken = randomToken()
+  const guestToken = randomToken()
+  const host = await connect(code, 'create', hostToken)
+  context.after(() => host.close())
+  const candidate = initialMatch(data)
+  candidate.settings = { ...candidate.settings, bestOf: 7, repeatScrolls: true, repeatSummons: false, turnSeconds: 1, playerNames: { blue: '北风', red: '玩家二' } }
+  host.send(JSON.stringify({ type: 'room:create', match: candidate }))
+  const created = await host.next('room:state')
+  assert.equal(created.match.settings.bestOf, 7)
+  assert.equal(created.match.settings.repeatScrolls, true)
+  assert.equal(created.match.settings.repeatSummons, false)
+  assert.equal(created.match.settings.turnSeconds, 60)
+  const guest = await connect(code, 'join', guestToken, '白面具')
+  context.after(() => guest.close())
+  const joined = await guest.next('room:state')
+  await host.next('room:state')
+  assert.deepEqual(joined.match.settings.playerNames, { blue: '北风', red: '白面具' })
+  guest.send(JSON.stringify({ type: 'room:action', action: 'rename', name: '白面具二', seat: 'blue' }))
+  assert.equal((await guest.next('room:state')).match.settings.playerNames.blue, '北风')
+  await host.next('room:state')
+  guest.send(JSON.stringify({ type: 'room:action', action: 'swap-seats' }))
+  await guest.next('room:error')
+  host.send(JSON.stringify({ type: 'room:action', action: 'swap-seats' }))
+  const swappedHost = await host.next('room:state')
+  const swappedGuest = await guest.next('room:state')
+  assert.equal(swappedHost.seat, 'red')
+  assert.equal(swappedGuest.seat, 'blue')
+  assert.deepEqual(swappedHost.match.settings.playerNames, { blue: '白面具二', red: '北风' })
+  guest.send(JSON.stringify({ type: 'room:action', action: 'start' }))
+  const started = await guest.next('room:state')
+  await host.next('room:state')
+  assert.ok(started.match.current.phase.expiresAt - started.serverTime > 59000)
+  assert.ok(started.match.current.phase.expiresAt - started.serverTime <= 60000)
+  guest.send(JSON.stringify({ type: 'room:action', action: 'swap-seats' }))
+  await guest.next('room:error')
+})
+
+test('the server alarm randomly completes a ban after the real 60-second deadline', { timeout: 150000 }, async (context) => {
+  const data = JSON.parse(await readFile(catalogPath, 'utf8'))
+  const code = randomCode()
+  const host = await connect(code, 'create', randomToken())
+  context.after(() => host.close())
+  host.send(JSON.stringify({ type: 'room:create', match: initialMatch(data) }))
+  await host.next('room:state')
+  const guest = await connect(code, 'join', randomToken())
+  context.after(() => guest.close())
+  await guest.next('room:state'); await host.next('room:state')
+  host.send(JSON.stringify({ type: 'room:action', action: 'start' }))
+  const started = await host.next('room:state')
+  await guest.next('room:state')
+  const deadline = started.match.current.phase.expiresAt
+  assert.ok(deadline - started.serverTime > 59000)
+  assert.ok(deadline - started.serverTime <= 60000)
+  const automatic = await guest.next('room:state', 90000)
+  assert.ok(automatic.serverTime >= deadline)
+  assert.equal(automatic.match.current.bans.blue.length, 1)
+  assert.equal(automatic.match.current.phase.turn, 'red')
+  assert.ok(data.ninjas.some(item => item.id === automatic.match.current.bans.blue[0]))
+  assert.ok(automatic.match.current.phase.expiresAt > deadline)
+})
+
 function initialMatch(data) {
   return {
     settings: { title: 'Worker integration test', roundBan: true },
@@ -127,9 +191,9 @@ function initialMatch(data) {
   }
 }
 
-async function connect(code, mode, token) {
-  const url = `${baseUrl}?room=${code}&mode=${mode}&client=${token}`
-  const socket = new WebSocket(url, { handshakeTimeout: 20000 })
+async function connect(code, mode, token, name = '') {
+  const url = `${baseUrl}?room=${code}&mode=${mode}&client=${token}&name=${encodeURIComponent(name)}`
+  const socket = new WebSocket(url, { handshakeTimeout: 40000 })
   const messages = []
   const waiters = []
   socket.on('message', (raw) => {
@@ -148,11 +212,11 @@ async function connect(code, mode, token) {
   return {
     send: (message) => socket.send(message),
     close: () => socket.terminate(),
-    next(type) {
+    next(type, timeoutMs = 40000) {
       const index = messages.findIndex((message) => message.type === type)
       if (index >= 0) return Promise.resolve(messages.splice(index, 1)[0])
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${type}`)), 20000)
+        const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${type}`)), timeoutMs)
         waiters.push({ type, resolve, timer })
       })
     },

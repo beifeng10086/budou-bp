@@ -1,6 +1,8 @@
 # Cloudflare Pages 免费入口
 
-固定入口：**[https://budou-bp-h5.pages.dev/](https://budou-bp-h5.pages.dev/)**。
+新版固定入口：**[https://wudou-bp-h5.pages.dev/](https://wudou-bp-h5.pages.dev/)**，新版配置、备份和验收见 [新版部署与验收](新版部署与验收.md)。
+
+以下为原稳定版部署记录，原入口 [https://budou-bp-h5.pages.dev/](https://budou-bp-h5.pages.dev/) 保留备用；新旧网址的房间不互通。
 
 2026-10-13 已发布到 Cloudflare Pages 免费项目 `budou-bp-h5`，没有绑定支付卡或购买域名。首次部署版本地址为 `https://450832da.budou-bp-h5.pages.dev`，分享时使用上面的固定入口。
 

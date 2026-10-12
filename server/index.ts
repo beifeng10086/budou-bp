@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { WebSocket, WebSocketServer } from 'ws'
 import {
-  chooseNinja, chooseTimedItem, expireTimedPhase, recordWinner, resetMatch, startMatch, startNextRound,
+  createMatch, expireTimedPhase, renamePlayer,
 } from '../src/bp.ts'
+import { applyRoomAction, type RoomAction } from '../src/room-actions.ts'
 import type { DataPackage, MatchState, Seat } from '../src/types.ts'
 
 const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000
@@ -27,19 +28,20 @@ type RoomMessage = {
   type: 'room:create' | 'room:join' | 'room:action' | 'room:ping'
   roomCode?: string
   match?: MatchState
-  action?: 'start' | 'ninja' | 'timed' | 'winner' | 'next' | 'new-match' | 'swap-seats'
+  action?: RoomAction
+  name?: string
   itemId?: string
   winner?: Seat
 }
 
-type ConnectionInfo = { roomCode: string; mode: 'create' | 'join'; token: string }
+type ConnectionInfo = { roomCode: string; mode: 'create' | 'join'; token: string; name: string | null }
 
 const port = Number(process.env.PORT ?? 8787)
 const rooms = new Map<string, Room>()
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const app = express()
 
-app.get('/health', (_request, response) => response.json({ ok: true, service: 'budou-bp-node', rooms: rooms.size }))
+app.get('/health', (_request, response) => response.json({ ok: true, service: 'wudou-bp-node', rooms: rooms.size }))
 app.use('/room', express.text({ type: 'application/json', limit: MAX_CREATE_MESSAGE_BYTES }))
 app.all('/room', (request, response) => {
   response.set('Cache-Control', 'no-store')
@@ -64,6 +66,7 @@ app.all('/room', (request, response) => {
     if (info.mode === 'create') return error('房间码已存在，请重新创建', 409)
     if (room.seats.red) return error('房间已满，只允许两名玩家', 409)
     room.seats.red = info.token
+    room.match = renamePlayer(room.match, 'red', info.name)
     room.lastActiveAt = Date.now()
     room.revision = (room.revision ?? 0) + 1
     broadcastState(info.roomCode, room)
@@ -72,7 +75,7 @@ app.all('/room', (request, response) => {
   const seat = seatForToken(room, info.token)!
   if (message?.type === 'room:action') {
     if ((message.action === 'start' || message.action === 'swap-seats') && !hasTwoPlayers(room)) return error('需要 1P 和 2P 均加入后才能进行此操作', 403)
-    const next = applyAction(room.match, message, seat)
+    const next = applyRoomAction(room.match, message, seat)
     if (!next) return error('当前操作不符合房间规则', 403)
     room.match = next
     room.lastActiveAt = Date.now()
@@ -109,6 +112,7 @@ wss.on('connection', (socket, request) => {
     if (!seat) {
       seat = 'red'
       room.seats.red = info.token
+      room.match = renamePlayer(room.match, 'red', info.name)
       room.revision = (room.revision ?? 0) + 1
     }
     replaceTokenSocket(room, info.token, socket)
@@ -156,7 +160,7 @@ wss.on('connection', (socket, request) => {
     if ((message.action === 'start' || message.action === 'swap-seats') && !hasTwoPlayers(room)) {
       return sendError(socket, '需要 1P 和 2P 均加入后才能进行此操作')
     }
-    const nextMatch = applyAction(room.match, message, client.seat)
+    const nextMatch = applyRoomAction(room.match, message, client.seat)
     if (!nextMatch) return sendError(socket, '当前操作不符合房间规则')
     room.match = nextMatch
     room.lastActiveAt = Date.now()
@@ -172,36 +176,6 @@ wss.on('connection', (socket, request) => {
   })
 })
 
-function applyAction(match: MatchState, message: RoomMessage, seat: Seat): MatchState | undefined {
-  const isHost = seat === 'blue'
-  switch (message.action) {
-    case 'start':
-      return isHost && match.status === 'setup' ? changed(match, startMatch(match)) : undefined
-    case 'ninja':
-      if (match.status !== 'playing' || match.current.phase.turn !== seat || !message.itemId) return undefined
-      if (!match.data.ninjas.some((item) => item.id === message.itemId)) return undefined
-      return changed(match, chooseNinja(match, message.itemId))
-    case 'timed': {
-      if (match.status !== 'playing' || !message.itemId) return undefined
-      const pool = match.current.phase.kind === 'scroll' ? match.data.scrolls
-        : match.current.phase.kind === 'summon' ? match.data.summons : undefined
-      if (!pool?.some((item) => item.id === message.itemId)) return undefined
-      return changed(match, chooseTimedItem(match, message.itemId, seat))
-    }
-    case 'winner':
-      return isHost && (message.winner === 'blue' || message.winner === 'red')
-        ? changed(match, recordWinner(match, message.winner)) : undefined
-    case 'next':
-      return isHost ? changed(match, startNextRound(match)) : undefined
-    case 'new-match':
-      return isHost && match.status === 'match-complete' ? resetMatch(match) : undefined
-    case 'swap-seats':
-      return isHost && match.status === 'setup' ? match : undefined
-    default:
-      return undefined
-  }
-}
-
 function connectionInfo(request: IncomingMessage, path = '/ws'): ConnectionInfo | undefined {
   const url = new URL(request.url ?? '/', 'http://localhost')
   if (url.pathname !== path) return undefined
@@ -211,7 +185,7 @@ function connectionInfo(request: IncomingMessage, path = '/ws'): ConnectionInfo 
   if (!/^[A-Z0-9]{5,8}$/.test(roomCode)) return undefined
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(token)) return undefined
   if (mode !== 'create' && mode !== 'join') return undefined
-  return { roomCode, token, mode }
+  return { roomCode, token, mode, name: url.searchParams.get('name') }
 }
 
 function rejectUpgrade(socket: Duplex, status: number, message: string) {
@@ -293,6 +267,7 @@ function sendState(socket: WebSocket, roomCode: string, room: Room, includeData 
 function statePayload(roomCode: string, room: Room, seat: Seat, includeData: boolean) {
   return {
     type: 'room:state', roomCode, match: compactMatch(room.match),
+    serverTime: Date.now(),
     revision: room.revision ?? 0,
     ...(includeData ? { data: room.match.data } : {}),
     seat,
@@ -306,17 +281,7 @@ function broadcastState(roomCode: string, room: Room, except?: WebSocket) {
 
 function sanitizeNewMatch(candidate: MatchState): MatchState {
   const title = typeof candidate.settings?.title === 'string' ? candidate.settings.title.slice(0, 40) : 'BO3 对局'
-  return {
-    settings: { title: title.trim() || 'BO3 对局', roundBan: candidate.settings?.roundBan !== false },
-    data: candidate.data, status: 'setup',
-    current: {
-      number: 1,
-      bans: { blue: [], red: [] }, picks: { blue: [], red: [] },
-      scrolls: { blue: [], red: [] }, summons: { blue: [], red: [] },
-      phase: { kind: 'ban', turn: 'blue', index: 0, expiresAt: null }, winner: null,
-    },
-    history: [],
-  }
+  return createMatch(candidate.data, title, candidate.settings?.roundBan !== false, candidate.settings)
 }
 
 function validMatch(value: MatchState): boolean {
@@ -339,10 +304,6 @@ function validDataPackage(value: unknown): value is DataPackage {
       return true
     })
   })
-}
-
-function changed(match: MatchState, next: MatchState): MatchState | undefined {
-  return next === match ? undefined : next
 }
 
 setInterval(() => {

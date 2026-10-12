@@ -1,5 +1,6 @@
 export type Seat = 'blue' | 'red'
 export type PhaseKind = 'ban' | 'pick' | 'scroll' | 'summon' | 'complete'
+export type BestOf = 3 | 5 | 7 | 0
 
 export interface GameItem {
   id: string
@@ -8,6 +9,8 @@ export interface GameItem {
   tags: string[]
   image?: string
   imageSource?: string
+  artwork?: string
+  artworkSource?: string
   officialId?: string
   aliases?: string[]
   releaseDate?: string
@@ -28,6 +31,11 @@ export interface DataPackage {
 export interface RoomSettings {
   title: string
   roundBan: boolean
+  bestOf?: BestOf
+  playerNames?: Record<Seat, string>
+  turnSeconds?: number
+  repeatScrolls?: boolean
+  repeatSummons?: boolean
 }
 
 export interface Phase {

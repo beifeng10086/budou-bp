@@ -1,5 +1,5 @@
 {
-  "name": "budou-bp-h5",
+  "name": "wudou-bp-h5",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,7 @@
     "data:sync": "node scripts/sync-catalog.mjs",
     "test:catalog": "node --test tests/catalog.test.mjs",
     "test:order": "node --import tsx --test tests/catalog-order.test.ts",
+    "test:bp": "node --import tsx --test tests/bp.test.ts",
     "test:cloudflare-room": "node --test tests/cloudflare-room.test.mjs",
     "test:browser": "playwright test"
   },

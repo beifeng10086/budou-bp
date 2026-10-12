@@ -10,6 +10,7 @@ export interface RoomPayload {
   players?: { blue: boolean; red: boolean }
   message?: string
   revision?: number
+  serverTime?: number
 }
 
 interface RoomOptions {

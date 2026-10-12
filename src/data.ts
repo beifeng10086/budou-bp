@@ -82,5 +82,5 @@ function validItem(value: unknown): value is { id: string; name: string; tags: s
   return Boolean(item && typeof item.id === 'string' && item.id.trim() && typeof item.name === 'string' && item.name.trim()
     && Array.isArray(item.tags) && item.tags.every((tag) => typeof tag === 'string')
     && (item.aliases === undefined || Array.isArray(item.aliases) && item.aliases.every((name) => typeof name === 'string'))
-    && (item.image === undefined || typeof item.image === 'string' && /^(\/assets\/[\w/.-]+|https:\/\/[^\s]+)$/.test(item.image)))
+    && [item.image, item.artwork].every(url => url === undefined || typeof url === 'string' && /^(\/assets\/[\w/.-]+|https:\/\/[^\s]+)$/.test(url)))
 }

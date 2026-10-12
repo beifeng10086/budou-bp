@@ -42,3 +42,15 @@ test('every catalog record has a decodable local image and matching database met
   console.log(`Verified ${items.length} images, ${(total / 1024 / 1024).toFixed(2)} MiB total`)
   assert.deepEqual(JSON.parse(db.prepare('SELECT metadata_json FROM packages WHERE id = ?').get(pack.id).metadata_json), pack)
 })
+
+test('every playable ninja has a real decodable artwork in the package and database', async () => {
+  assert.deepEqual(report.artworkIssues, [])
+  for (const ninja of pack.ninjas) {
+    assert.match(ninja.artwork, /^\/assets\/catalog\/ninja-[\w-]+\.webp$/)
+    const metadata = await sharp(`public${ninja.artwork}`).metadata()
+    assert.ok(metadata.width > 160 || metadata.height > 160)
+    assert.ok(metadata.width <= 640 && metadata.height <= 640)
+    const row = db.prepare('SELECT metadata_json FROM items WHERE official_id = ? AND kind = ?').get(ninja.officialId, 'ninja')
+    assert.equal(JSON.parse(row.metadata_json).artwork, ninja.artwork)
+  }
+})

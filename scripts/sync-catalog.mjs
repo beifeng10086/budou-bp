@@ -133,6 +133,28 @@ for (let i = 0; i < details.length; i++) {
 const extras = [...extra.values()].sort((a, b) => a.id.localeCompare(b.id))
 const items = [...ninjas, ...extras]
 const { default: sharp } = await import('sharp')
+const artworkIssues = []
+await pool(ninjas, async (item, index) => {
+  const display = details[index]?.zhanshi?.rzzs
+  item.description = display?.rzyjhgl || ''
+  if (!display?.bslhcc1) {
+    artworkIssues.push({ id: item.id, error: 'Official artwork source missing' })
+    return
+  }
+  try {
+    item.artworkSource = officialUrl(display.bslhcc1)
+    const hash = createHash('sha256').update(item.artworkSource).digest('hex').slice(0, 10)
+    const filename = `${item.id}-art-${hash}.webp`
+    const path = resolve(assetDir, filename)
+    try { await access(path) } catch {
+      const bytes = await request(item.artworkSource)
+      const optimized = await sharp(bytes).rotate().resize(640, 640, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 84 }).toBuffer()
+      await writeFile(`${path}.tmp`, optimized)
+      await rename(`${path}.tmp`, path)
+    }
+    item.artwork = `/assets/catalog/${filename}`
+  } catch (error) { artworkIssues.push({ id: item.id, error: error.message }) }
+}, 'Official standing artwork')
 await pool(items, async (item) => {
   const hash = createHash('sha256').update(item.imageSource).digest('hex').slice(0, 10)
   const filename = `${item.id}-${hash}.webp`
@@ -179,6 +201,8 @@ const report = {
   excludedFuture: future.map(({ id, name, releaseDate }) => ({ id, name, releaseDate })),
   scrolls: pack.scrolls.length, summons: pack.summons.length,
   imagesDownloaded: items.filter((item) => item.image).length,
+  artworksDownloaded: ninjas.filter((item) => item.artwork).length,
+  artworkIssues,
   coverage: pack.completeness, issues,
 }
 if (pack.scrolls.length < 9 || pack.summons.length < 9) throw new Error('Not enough verified records to publish a BO3 package')
