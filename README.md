@@ -2,7 +2,7 @@
 
 这是一个非官方移动端 BP 练习工具。已接入官网公开资料与本地头像、图标，支持本机演练和双人 WebSocket 房间。
 
-Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。项目已准备好 [Render 免费部署方案](docs/Render免费部署.md)，尚未上传 GitHub 或上线 Render；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
+Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。代码已上传到 [GitHub 仓库](https://github.com/beifeng10086/budou-bp)，Gitee 另有私有备份。2026-10-13 在 Render 选择 Free 套餐后，创建服务仍要求绑卡并进行 1 美元临时验证；已取消，尚未上线 Render。具体配置和限制见 [Render 部署记录](docs/Render免费部署.md)；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
 
 ## 官网资料与图片
 

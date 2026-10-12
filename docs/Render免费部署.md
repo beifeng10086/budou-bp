@@ -1,5 +1,12 @@
 # Render 免费部署与维护
 
+## 当前发布状态（2026-10-13）
+
+- GitHub 授权成功，代码已上传到 `https://github.com/beifeng10086/budou-bp`，分支为 `master`。Gitee 另有私有备份。
+- Render 已成功连接该 GitHub 公开仓库。已填写 Node、Singapore、Free、`npm ci && npm run build`、`npm run server`、`NODE_VERSION=22.16.0` 和 `/health`。
+- 核实 Free 单选项为选中、页面显示 `$0 / month` 后，点击部署仍出现 `Add Card` 弹窗，说明需要进行 1 美元临时银行卡验证。该要求是本账号本次实测结果，不代表所有账号都相同。
+- 按零支出要求取消绑卡弹窗；服务未创建，尚无 Render 公网网址。不要把下文的示例网址当作已上线网址，也不要将“Free”理解为本账号一定无需银行卡。
+
 项目已上传 Gitee，但 2026-10-13 实测 Render 的仓库表单拒绝 Gitee 地址。需要将代码镜像到 GitHub、GitLab 或 Bitbucket 后再部署；详见 [Gitee 与 Render 部署实测](./Gitee与Render免费部署.md)。公开 Git 地址入口的后续更新需要手动触发。
 
 Cloudflare `workers.dev` 在当前电脑和手机移动网络均无法访问，因此备用公网方案改为 Render Free Web Service。Render 的 `onrender.com` 应用域名已在当前电脑实测可达，服务支持 HTTPS 和 WebSocket，可以直接运行本项目现有的 Node 房间服务。
@@ -21,12 +28,11 @@ Cloudflare `workers.dev` 在当前电脑和手机移动网络均无法访问，�
 
 ## 首次发布
 
-Render 需要从 Git 仓库拉取项目。当前目录已经初始化并提交了可部署代码，但尚无 GitHub 远端；当前电脑连接 GitHub 登录页面超时，因此还没有创建仓库。网络恢复后，请先在 GitHub 新建空仓库，把本地提交推送过去，然后打开：
+Render 需要从 Git 仓库拉取项目。当前已有 GitHub 公开仓库，不必重复创建。后续更新可以使用本地 `github` 远端：
 
 ```powershell
 Set-Location 'C:\Users\29851\Documents\ChatGPT\武斗bp'
-git remote add origin https://github.com/你的用户名/你的新仓库名.git
-git push -u origin master
+git push github master
 ```
 
 不要在 GitHub 新仓库里预先创建 README、`.gitignore` 或 License，以免首次推送需要处理冲突。建议先设为 private；部署时在 Render 授权读取该仓库。若使用 public 仓库，请先考虑头像、图标的素材分发授权。
@@ -35,7 +41,7 @@ git push -u origin master
 
 https://dashboard.render.com/blueprints
 
-选择 **New Blueprint Instance**，连接该 GitHub 仓库。Render 会读取根目录的 `render.yaml`，创建名为 `budou-bp` 的免费 Web Service。确认页面显示 `plan: free` 后执行部署，不需要添加数据库、磁盘或付费实例。
+选择 **New Blueprint Instance**，连接该 GitHub 仓库。Render 会读取根目录的 `render.yaml`。也可使用 **New > Web Service > Public Git Repository** 手动填写配置，注意页面会因根目录有 Dockerfile 而自动选择 Docker 和付费实例，需要明确改为 Node 和 Free。若出现绑卡验证，按当前账号的平台要求判断是否能够继续；目前已取消该步骤。
 
 部署完成后会得到类似下面的固定网址：
 
