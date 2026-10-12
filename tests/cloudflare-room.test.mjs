@@ -78,7 +78,7 @@ function initialMatch(data) {
 
 async function connect(code, mode, token) {
   const url = `${baseUrl}?room=${code}&mode=${mode}&client=${token}`
-  const socket = new WebSocket(url)
+  const socket = new WebSocket(url, { handshakeTimeout: 20000 })
   const messages = []
   const waiters = []
   socket.on('message', (raw) => {
@@ -96,12 +96,12 @@ async function connect(code, mode, token) {
   })
   return {
     send: (message) => socket.send(message),
-    close: () => socket.close(),
+    close: () => socket.terminate(),
     next(type) {
       const index = messages.findIndex((message) => message.type === type)
       if (index >= 0) return Promise.resolve(messages.splice(index, 1)[0])
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${type}`)), 5000)
+        const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${type}`)), 20000)
         waiters.push({ type, resolve, timer })
       })
     },
@@ -110,10 +110,11 @@ async function connect(code, mode, token) {
 
 function rejectedConnection(code, mode, token) {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`${baseUrl}?room=${code}&mode=${mode}&client=${token}`)
+    const socket = new WebSocket(`${baseUrl}?room=${code}&mode=${mode}&client=${token}`, { handshakeTimeout: 20000 })
     socket.once('unexpected-response', (_request, response) => {
       resolve(response.statusCode)
       response.resume()
+      socket.terminate()
     })
     socket.once('open', () => {
       socket.close()

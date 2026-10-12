@@ -4,7 +4,8 @@ const externalBaseURL = process.env.BP_BASE_URL
 
 export default defineConfig({
   testDir: './tests/browser',
-  timeout: 60000,
+  timeout: externalBaseURL ? 120000 : 60000,
+  expect: { timeout: externalBaseURL ? 20000 : 5000 },
   workers: 1,
   use: {
     baseURL: externalBaseURL ?? 'http://127.0.0.1:8790',

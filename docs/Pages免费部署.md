@@ -1,6 +1,10 @@
 # Cloudflare Pages 免费入口
 
-2026-10-13 测试用户提供的三个实际站点：`naiwa-kuaipao.pages.dev`、`naiwaxiaowu.pages.dev` 和 `nailong-dance.pages.dev` 均返回 HTTP 200。旧 BP `workers.dev` 入口仍失败，因此准备改用 Pages 的免费 `pages.dev` 子域名。其他站点可达不代表本项目的新域名已通过验收。
+固定入口：**[https://budou-bp-h5.pages.dev/](https://budou-bp-h5.pages.dev/)**。
+
+2026-10-13 已发布到 Cloudflare Pages 免费项目 `budou-bp-h5`，没有绑定支付卡或购买域名。首次部署版本地址为 `https://450832da.budou-bp-h5.pages.dev`，分享时使用上面的固定入口。
+
+用户提供的三个实际站点 `naiwa-kuaipao.pages.dev`、`naiwaxiaowu.pages.dev` 和 `nailong-dance.pages.dev` 均返回 HTTP 200。旧 BP `workers.dev` 入口仍失败，因此改用 Pages 的免费 `pages.dev` 子域名。
 
 ## 架构
 
@@ -22,8 +26,10 @@ npm run deploy:pages
 第一次部署前，如果项目不存在，创建 Direct Upload 项目：
 
 ```powershell
-npx wrangler pages project create budou-bp-h5 --production-branch master --cwd pages
+npx wrangler pages project create budou-bp-h5 --production-branch master --cwd pages --force
 ```
+
+首次创建使用 `--force` 明确创建 Pages 项目，避免当前 CLI 自动转为 Workers 项目。已有项目的后续部署不加 `--force`。
 
 电脑授权页验证失败时，可改为设备授权，在手机访问命令给出的验证网址并输入短效码：
 
@@ -31,7 +37,7 @@ npx wrangler pages project create budou-bp-h5 --production-branch master --cwd p
 npx wrangler login --device --browser=false --scopes account:read user:read workers:write workers_scripts:write pages:write
 ```
 
-以成功部署后命令实际返回的生产域名为准。若项目名被占用，需要调整 `pages/wrangler.jsonc` 的 `name` 并使用可用名称。不要将尚未创建的示例域名当作上线地址。
+本项目已完成首次创建，后续无需再次创建项目。其他账号首次部署时，若项目名被占用，需要调整 `pages/wrangler.jsonc` 的 `name` 并使用可用名称。
 
 更新网页或资料后再次运行 `npm run deploy:pages`，生产域名保持不变。当前采用本机直接上传，不依赖 GitHub 自动构建。
 
@@ -39,7 +45,15 @@ npx wrangler login --device --browser=false --scopes account:read user:read work
 
 不升级 Cloudflare 套餐，不购买域名。Pages 静态请求与 Functions/Workers/DO 是不同的计费资源；Functions 与 Workers 的免费请求合计上限为每天 100,000，Durable Objects 也有单独的免费额度。实际规则以平台当前说明为准，免费不等于无限并发或无限用量。
 
-上线后需检查 `/health`、全部资料和图片、两个浏览器的房间连接、第三人拒绝及刷新恢复，并用手机流量和微信验证新域名。国内不同网络的可达性仍需实测。
+公网验证记录：
+
+- 首页、`/health` 和官网汇总数据包返回 HTTP 200。
+- 320/390/844/1280 像素视口的头像、S/A/B/C 排序、筛选和 BP 图导出共 4 项浏览器测试通过。
+- 两个独立浏览器创建及加入房间、房主刷新恢复 1P、双方同步开始 BP 的测试通过。
+- 房间协议的席位、第三人拒绝、非房主开始拒绝、回合权限、Ban 同步和断线恢复测试通过。
+- 部分公网步骤等待超过本地测试原先的 5 秒上限；测试已按公网设置 20 秒等待，同时修正拒绝连接的清理逻辑。协议测试总耗时约 48 秒，浏览器联机测试约 33 秒，不代表每次玩家操作都需要这些时间。
+
+手机流量与微信尚待用户实测，国内不同网络的可达性需分别验证。
 
 本地使用两个配置同时运行 Pages 和房间 Worker，确保跨 Worker 的房间绑定正确加载：
 
@@ -49,7 +63,7 @@ Set-Location pages
 npx wrangler pages dev --config wrangler.jsonc --config ../wrangler.jsonc --ip 127.0.0.1 --port 8789
 ```
 
-本次已通过：Pages 构建、Worker/Pages 类型检查、跨 Worker 房间协议测试，以及 320/390/844/1280 像素视口和双浏览器房间恢复共 5 项浏览器测试。本地成功不能代替公网验证。
+本地也已通过 Pages 构建、Worker/Pages 类型检查、跨 Worker 房间协议测试及全部 5 项浏览器测试。
 
 参考：
 

@@ -2,9 +2,11 @@
 
 这是一个非官方移动端 BP 练习工具。已接入官网公开资料与本地头像、图标，支持本机演练和双人 WebSocket 房间。
 
-Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。代码已上传到 [GitHub 仓库](https://github.com/beifeng10086/budou-bp)，Gitee 另有私有备份。2026-10-13 在 Render 选择 Free 套餐后，创建服务仍要求绑卡并进行 1 美元临时验证；已取消，尚未上线 Render。具体配置和限制见 [Render 部署记录](docs/Render免费部署.md)；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
+固定公网入口：**[https://budou-bp-h5.pages.dev/](https://budou-bp-h5.pages.dev/)**。2026-10-13 已部署到 Cloudflare Pages 免费项目，没有绑定支付卡或购买域名。后续更新仍使用此网址；通过房间链接或房间码邀请另一名玩家。
 
-用户提供的三个 `pages.dev` 游戏站点在本机实测可达，已新增 [Cloudflare Pages 免费入口](docs/Pages免费部署.md)。Pages 静态页面通过内部绑定复用现有 Worker 的持久房间，浏览器只连接 Pages 域名。本地协议及全部 5 项浏览器测试通过；公网发布仍需补充 Pages 授权并验证实际域名。
+Pages 静态页面通过内部绑定复用现有 Worker 的持久房间，浏览器只连接 Pages 域名。公网首页、健康检查和数据包返回 HTTP 200；320/390/844/1280 像素视口的头像、排序、筛选及结果图导出测试，以及双浏览器房间加入、开始和刷新恢复测试均已通过。房间协议的席位、权限和第三人拒绝测试通过。公网联机测试出现数秒等待，需继续实测手机流量及微信访问。部署、免费额度与更新命令见 [Pages 部署说明](docs/Pages免费部署.md)。
+
+代码已上传到 [GitHub 仓库](https://github.com/beifeng10086/budou-bp)，Gitee 另有私有备份。旧 `workers.dev` 玩家入口无法访问；Render 选择 Free 套餐仍要求绑卡并进行 1 美元临时验证，已取消。历史记录保留在 [Render 部署记录](docs/Render免费部署.md) 和 [Worker 部署记录](docs/Cloudflare免费部署.md)。
 
 ## 官网资料与图片
 
@@ -53,7 +55,15 @@ npm run dev
 
 ## 生产部署
 
-下一步可按 [Render 免费部署教程](docs/Render免费部署.md) 发布，由一个免费 Node Web Service 同时提供页面、图片和双人 WebSocket 房间。Render 免费服务闲置 15 分钟会休眠，首次唤醒可能约需 1 分钟；进行中的房间通过客户端心跳保持活跃。
+当前生产站点使用 Pages 提供页面和同源 WebSocket 入口，现有 Worker 的 Durable Objects 持久保存房间。更新页面或数据包后运行：
+
+```bash
+npm run deploy:pages
+```
+
+修改房间 Worker 或共用 BP 规则时，先运行 `npm run deploy` 更新 Worker，再运行 `npm run deploy:pages` 更新页面和入口。房间无活动 6 小时后过期。
+
+以下 Node 服务命令用于本地或自行管理的备用主机：
 
 ```bash
 npm install
@@ -61,7 +71,7 @@ npm run build
 npm run server
 ```
 
-Render 部署成功后会返回固定的 `onrender.com` HTTPS 网址，后续更新仍使用同一网址。房间无活动 6 小时后过期，页面刷新、手机锁屏或短时断网后会自动重连并恢复原席位；免费实例重启、休眠或重新部署会清空未完成房间。
+在线页面刷新、手机锁屏或短时断网后会自动重连并恢复原席位。Node 备用服务的房间保存在内存中，服务重启会清空未完成房间。
 
 Railway/Node 是[备用部署方案](docs/公网部署.md)。`server/index.ts` 的房间保存在内存中，只建议用于本地开发或自行管理的 Node 主机。
 
