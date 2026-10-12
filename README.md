@@ -4,6 +4,8 @@
 
 Cloudflare 地址已发布，但当前电脑和手机移动网络都无法访问 `workers.dev`。代码已上传到 [GitHub 仓库](https://github.com/beifeng10086/budou-bp)，Gitee 另有私有备份。2026-10-13 在 Render 选择 Free 套餐后，创建服务仍要求绑卡并进行 1 美元临时验证；已取消，尚未上线 Render。具体配置和限制见 [Render 部署记录](docs/Render免费部署.md)；Cloudflare 部署记录保留在 [Cloudflare 免费部署教程](docs/Cloudflare免费部署.md)。
 
+用户提供的三个 `pages.dev` 游戏站点在本机实测可达，已新增 [Cloudflare Pages 免费入口](docs/Pages免费部署.md)。Pages 静态页面通过内部绑定复用现有 Worker 的持久房间，浏览器只连接 Pages 域名。本地协议及全部 5 项浏览器测试通过；公网发布仍需补充 Pages 授权并验证实际域名。
+
 ## 官网资料与图片
 
 首页自动加载 `public/data/catalog-index.json` 中的数据包，无需玩家手工导入。默认包按指定截止日期过滤尚未上线的忍者；原始列表中的所有忍者仍保存在数据库中。

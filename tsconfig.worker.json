@@ -11,5 +11,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["worker/**/*.ts", "src/bp.ts", "src/types.ts"]
+  "include": ["worker/**/*.ts", "pages/**/*.ts", "src/bp.ts", "src/types.ts"]
 }
