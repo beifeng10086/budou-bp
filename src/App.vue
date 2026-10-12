@@ -8,6 +8,7 @@ import { builtinPackages, loadOfficialPackages, validPackage } from './data'
 import ItemPortrait from './components/ItemPortrait.vue'
 import ResultList from './components/ResultList.vue'
 import DraftRoster from './components/DraftRoster.vue'
+import { RoomTransport, type RoomPayload } from './room-transport'
 import { sortNinjas } from './catalog'
 import {
   canSelectNinja, canSelectTimedItem, chooseNinja, chooseTimedItem, createMatch, expireTimedPhase, recordWinner, resetMatch, startMatch, startNextRound,
@@ -16,7 +17,6 @@ import type { DataPackage, GameItem, MatchState, Seat, StoredPackage } from './t
 
 const CUSTOM_PACKAGES_KEY = 'budou-bp-custom-packages'
 const ROOM_TOKEN_PREFIX = 'budou-bp-room-token:'
-type MatchWire = Omit<MatchState, 'data'> & { dataPackageId?: string; data?: DataPackage }
 type RoomConnection = { mode: 'create' | 'join'; code: string; token: string; match?: MatchState }
 const screen = ref<'home' | 'match'>('home')
 const packages = ref<StoredPackage[]>(loadPackages())
@@ -37,11 +37,8 @@ const catalogLoading = ref(true)
 const catalogError = ref('')
 const search = ref('')
 const rankFilter = ref('')
-let socket: WebSocket | null = null
+let roomTransport: RoomTransport | null = null
 let timer: number | undefined
-let heartbeatTimer: number | undefined
-let reconnectTimer: number | undefined
-let reconnectAttempt = 0
 let roomConnection: RoomConnection | null = null
 
 const selectedPackage = computed<DataPackage>(() => packages.value.find((pack) => pack.id === selectedPackageId.value) ?? builtinPackages[0])
@@ -96,9 +93,6 @@ onMounted(() => {
       if (!online.value) updateMatch(expireTimedPhase(match.value))
     }
   }, 250)
-  heartbeatTimer = window.setInterval(() => {
-    if (socket?.readyState === WebSocket.OPEN && online.value) socket.send(JSON.stringify({ type: 'room:ping' }))
-  }, 25_000)
   const sharedCode = new URLSearchParams(window.location.search).get('room')
   if (sharedCode) {
     joinCode.value = sharedCode.toUpperCase()
@@ -121,10 +115,8 @@ async function loadCatalog() {
 
 onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer)
-  if (heartbeatTimer) window.clearInterval(heartbeatTimer)
-  if (reconnectTimer) window.clearTimeout(reconnectTimer)
   roomConnection = null
-  socket?.close()
+  roomTransport?.close()
 })
 
 function loadPackages(): StoredPackage[] {
@@ -141,6 +133,9 @@ function saveCustomPackages() {
 }
 
 function createLocalMatch() {
+  roomTransport?.close()
+  roomTransport = null
+  roomConnection = null
   roomCode.value = ''
   online.value = false
   connectionLabel.value = '本机演练'
@@ -164,12 +159,8 @@ function joinOnlineRoom() {
 }
 
 function openSocket(mode: 'create' | 'join', code: string, newMatch?: MatchState) {
-  if (reconnectTimer) window.clearTimeout(reconnectTimer)
-  const previous = socket
-  socket = null
-  previous?.close()
+  roomTransport?.close()
   online.value = false
-  reconnectAttempt = 0
   roomConnection = { mode, code, match: newMatch, token: roomToken(code) }
   connectionLabel.value = '正在连接共享房间...'
   connectRoom()
@@ -183,60 +174,32 @@ function connectRoom() {
   endpoint.searchParams.set('room', connection.code)
   endpoint.searchParams.set('mode', connection.mode)
   endpoint.searchParams.set('client', connection.token)
-  let nextSocket: WebSocket
-  try {
-    nextSocket = new WebSocket(endpoint)
-    socket = nextSocket
-  } catch {
-    connectionLabel.value = '无法建立连接，请检查部署服务'
-    return
-  }
-  nextSocket.onopen = () => nextSocket.send(JSON.stringify(connection.mode === 'create'
-    ? { type: 'room:create', roomCode: connection.code, match: connection.match }
-    : { type: 'room:join', roomCode: connection.code }))
-  nextSocket.onmessage = (event) => {
-    let payload: { type: string; roomCode?: string; match?: MatchWire; data?: DataPackage; seat?: Seat; players?: { blue: boolean; red: boolean }; message?: string }
-    try { payload = JSON.parse(event.data) as typeof payload } catch { return }
-    if (payload.type === 'room:state' && payload.match) {
-      const data = payload.data ?? payload.match.data ?? (payload.match.dataPackageId === match.value.data.id ? match.value.data : undefined)
-      if (!data) {
-        connectionLabel.value = '房间数据包加载失败，正在重连'
-        nextSocket.close()
-        return
+  roomTransport = new RoomTransport({
+    endpoint: endpoint.toString(), mode: connection.mode, match: connection.match,
+    onStatus: message => { connectionLabel.value = message },
+    onMessage: (payload: RoomPayload) => {
+      if (payload.type === 'room:state' && payload.match) {
+        const data = payload.data ?? payload.match.data ?? (payload.match.dataPackageId === match.value.data.id ? match.value.data : undefined)
+        if (!data) {
+          connectionLabel.value = '房间数据包加载失败，请重新进入'
+          return
+        }
+        roomCode.value = payload.roomCode ?? connection.code
+        match.value = { ...payload.match, data }
+        online.value = true
+        onlineSeat.value = payload.seat ?? 'blue'
+        activeTimedSeat.value = onlineSeat.value
+        roomPlayers.value = payload.players ?? roomPlayers.value
+        connectionLabel.value = '共享房间已连接'
+        screen.value = 'match'
+        roomConnection = { ...connection, mode: 'join', match: undefined }
+        history.replaceState({}, '', `?room=${roomCode.value}`)
+      } else if (payload.type === 'room:error') {
+        connectionLabel.value = payload.message ?? '房间连接失败'
       }
-      roomCode.value = payload.roomCode ?? connection.code
-      match.value = { ...payload.match, data }
-      online.value = true
-      onlineSeat.value = payload.seat ?? 'blue'
-      activeTimedSeat.value = onlineSeat.value
-      roomPlayers.value = payload.players ?? roomPlayers.value
-      connectionLabel.value = '共享房间已连接'
-      screen.value = 'match'
-      reconnectAttempt = 0
-      roomConnection = { ...connection, mode: 'join', match: undefined }
-      history.replaceState({}, '', `?room=${roomCode.value}`)
-    } else if (payload.type === 'room:error') {
-      connectionLabel.value = payload.message ?? '房间连接失败'
-    }
-  }
-  nextSocket.onclose = () => {
-    if (socket !== nextSocket) return
-    socket = null
-    if (online.value && roomConnection) scheduleReconnect()
-  }
-  nextSocket.onerror = () => {
-    if (!online.value) connectionLabel.value = '共享服务不可用，可先使用本机演练'
-  }
-}
-
-function scheduleReconnect() {
-  if (!roomConnection || reconnectTimer) return
-  connectionLabel.value = '连接已断开，正在自动重连'
-  const delay = Math.min(10_000, 1_000 * 2 ** reconnectAttempt++)
-  reconnectTimer = window.setTimeout(() => {
-    reconnectTimer = undefined
-    connectRoom()
-  }, delay)
+    },
+  })
+  roomTransport.start()
 }
 
 function roomToken(code: string) {
@@ -260,8 +223,8 @@ function updateMatch(next: MatchState) {
 }
 
 function sendAction(action: 'start' | 'ninja' | 'timed' | 'winner' | 'next' | 'new-match' | 'swap-seats', options: { itemId?: string; winner?: Seat } = {}) {
-  if (socket?.readyState !== WebSocket.OPEN || !roomCode.value) return
-  socket.send(JSON.stringify({ type: 'room:action', roomCode: roomCode.value, action, ...options }))
+  if (!online.value || !roomCode.value) return
+  roomTransport?.send({ type: 'room:action', roomCode: roomCode.value, action, ...options })
 }
 
 function selectItem(item: GameItem) {
@@ -338,11 +301,8 @@ async function exportImage() {
 
 function backHome() {
   roomConnection = null
-  if (reconnectTimer) window.clearTimeout(reconnectTimer)
-  reconnectTimer = undefined
-  const previous = socket
-  socket = null
-  previous?.close()
+  roomTransport?.close()
+  roomTransport = null
   online.value = false
   history.replaceState({}, '', location.pathname)
   screen.value = 'home'

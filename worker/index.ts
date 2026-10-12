@@ -26,6 +26,7 @@ interface RoomMeta {
   seats: Partial<Record<Seat, string>>
   createdAt: number
   lastActiveAt: number
+  revision?: number
 }
 
 interface SocketAttachment {
@@ -62,8 +63,8 @@ export default {
       return Response.json({ ok: true, service: 'budou-bp-cloudflare' })
     }
 
-    if (url.pathname === '/ws') {
-      if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    if (url.pathname === '/ws' || url.pathname === '/room') {
+      if (url.pathname === '/ws' && request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
         return new Response('Expected a WebSocket upgrade', { status: 426 })
       }
 
@@ -95,6 +96,7 @@ export class Room {
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === '/room') return this.fetchHttp(request)
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected a WebSocket upgrade', { status: 426 })
     }
@@ -112,6 +114,7 @@ export class Room {
         if (mode === 'create') return new Response('Room already exists', { status: 409 })
         if (this.meta.seats.red) return new Response('Room is full', { status: 409 })
         this.meta.seats.red = token
+        this.meta.revision = (this.meta.revision ?? 0) + 1
         this.meta.lastActiveAt = Date.now()
         await this.persistMeta()
       } else {
@@ -126,6 +129,50 @@ export class Room {
     this.state.acceptWebSocket(server)
     this.state.waitUntil(this.afterConnect(server))
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private async fetchHttp(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    const token = url.searchParams.get('client') ?? ''
+    const error = (message: string, status: number) => Response.json(
+      { type: 'room:error', message }, { status, headers: { 'Cache-Control': 'no-store' } },
+    )
+    if (request.method !== 'GET' && request.method !== 'POST') return error('不支持的请求方式', 405)
+
+    let message: ClientMessage | undefined
+    if (request.method === 'POST') {
+      const raw = await readLimitedBody(request, MAX_CREATE_MESSAGE_BYTES)
+      if (raw === undefined) return error('消息过大', 413)
+      message = parseMessage(raw)
+      if (!message) return error('消息格式不正确', 400)
+      if (message.type !== 'room:create' && byteLength(raw) > MAX_ACTION_MESSAGE_BYTES) return error('操作消息过大', 413)
+    }
+
+    let includeData = url.searchParams.get('data') === '1'
+    if (!this.meta) {
+      if (url.searchParams.get('mode') !== 'create' || message?.type !== 'room:create') {
+        return error('未找到该房间，可能已经过期', 404)
+      }
+      const problem = await this.initializeRoom(token, message.match)
+      if (problem) return error(problem, 400)
+      includeData = true
+    } else if (!seatForToken(this.meta, token)) {
+      if (url.searchParams.get('mode') === 'create') return error('房间码已存在，请重新创建', 409)
+      if (this.meta.seats.red) return error('房间已满，只允许两名玩家', 409)
+      this.meta.seats.red = token
+      this.meta.lastActiveAt = Date.now()
+      this.meta.revision = (this.meta.revision ?? 0) + 1
+      await this.persistMeta()
+      await this.scheduleAlarm()
+      this.broadcastState()
+      includeData = true
+    }
+
+    if (message?.type === 'room:action') {
+      const problem = await this.updateRoom(token, message)
+      if (problem) return error(problem, 403)
+    }
+    return Response.json(this.statePayload(token, includeData), { headers: { 'Cache-Control': 'no-store' } })
   }
 
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -176,6 +223,7 @@ export class Room {
       const next = expireTimedPhase(match)
       if (next !== match) {
         this.meta.match = compactMatch(next)
+        this.meta.revision = (this.meta.revision ?? 0) + 1
         await this.persistMeta()
         this.broadcastState()
       }
@@ -199,11 +247,13 @@ export class Room {
       else this.sendError(socket, '房间码已存在，请重试')
       return
     }
-    if (!candidate || !validDataPackage(candidate.data)) {
-      this.sendError(socket, '数据包格式无效')
-      return
-    }
+    const problem = await this.initializeRoom(token, candidate)
+    if (problem) return this.sendError(socket, problem)
+    this.sendState(socket, true)
+  }
 
+  private async initializeRoom(token: string, candidate?: MatchState): Promise<string | undefined> {
+    if (!candidate || !validDataPackage(candidate.data)) return '数据包格式无效'
     const title = typeof candidate.settings?.title === 'string' ? candidate.settings.title.slice(0, 40) : 'BO3 对局'
     const roundBan = candidate.settings?.roundBan !== false
     const cleanMatch = createMatch(candidate.data, title, roundBan)
@@ -214,26 +264,32 @@ export class Room {
       seats: { blue: token },
       createdAt: now,
       lastActiveAt: now,
+      revision: 1,
     }
     await this.state.storage.put({ meta: this.meta, data: this.data })
     await this.scheduleAlarm()
-    this.sendState(socket, true)
   }
 
   private async applyAction(socket: WebSocket, token: string, message: RoomActionMessage): Promise<void> {
-    if (!this.meta || !this.data) return this.sendError(socket, '房间尚未创建')
+    const problem = await this.updateRoom(token, message)
+    if (problem) this.sendError(socket, problem)
+  }
+
+  private async updateRoom(token: string, message: RoomActionMessage): Promise<string | undefined> {
+    if (!this.meta || !this.data) return '房间尚未创建'
     const seat = seatForToken(this.meta, token)
-    if (!seat) return this.sendError(socket, '你不是该房间的玩家')
+    if (!seat) return '你不是该房间的玩家'
     if ((message.action === 'start' || message.action === 'swap-seats') && !hasTwoPlayers(this.meta)) {
-      return this.sendError(socket, '需要 1P 和 2P 均加入后才能进行此操作')
+      return '需要 1P 和 2P 均加入后才能进行此操作'
     }
 
     const current = inflateMatch(this.meta.match, this.data)
     const next = applyRoomAction(current, message, seat)
-    if (!next) return this.sendError(socket, '当前操作不符合房间规则')
+    if (!next) return '当前操作不符合房间规则'
 
     this.meta.match = compactMatch(next)
     this.meta.lastActiveAt = Date.now()
+    this.meta.revision = (this.meta.revision ?? 0) + 1
     if (message.action === 'swap-seats') {
       const blue = this.meta.seats.blue
       this.meta.seats.blue = this.meta.seats.red
@@ -245,17 +301,23 @@ export class Room {
   }
 
   private sendState(socket: WebSocket, includeData = false): void {
-    if (!this.meta) return
     const token = attachmentToken(socket)
-    const seat = token ? seatForToken(this.meta, token) : undefined
-    if (!seat) return
-    this.send(socket, {
+    const payload = token ? this.statePayload(token, includeData) : undefined
+    if (payload) this.send(socket, payload)
+  }
+
+  private statePayload(token: string, includeData: boolean) {
+    if (!this.meta) return undefined
+    const seat = seatForToken(this.meta, token)
+    if (!seat) return undefined
+    return {
       type: 'room:state',
+      revision: this.meta.revision ?? 0,
       match: this.meta.match,
       ...(includeData && this.data ? { data: this.data } : {}),
       seat,
       players: playerPresence(this.meta),
-    })
+    }
   }
 
   private broadcastState(): void {
@@ -371,6 +433,26 @@ function parseMessage(raw: string): ClientMessage | undefined {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength
+}
+
+async function readLimitedBody(request: Request, limit: number): Promise<string | undefined> {
+  const reader = request.body?.getReader()
+  if (!reader) return ''
+  const decoder = new TextDecoder()
+  let size = 0
+  let text = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return text + decoder.decode()
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        return undefined
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally { reader.releaseLock() }
 }
 
 function validDataPackage(value: unknown): value is DataPackage {

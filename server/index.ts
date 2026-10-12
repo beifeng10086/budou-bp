@@ -19,6 +19,7 @@ type Room = {
   clients: Map<WebSocket, ClientInfo>
   seats: Partial<Record<Seat, string>>
   lastActiveAt: number
+  revision?: number
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -39,6 +40,49 @@ const currentDir = dirname(fileURLToPath(import.meta.url))
 const app = express()
 
 app.get('/health', (_request, response) => response.json({ ok: true, service: 'budou-bp-node', rooms: rooms.size }))
+app.use('/room', express.text({ type: 'application/json', limit: MAX_CREATE_MESSAGE_BYTES }))
+app.all('/room', (request, response) => {
+  response.set('Cache-Control', 'no-store')
+  const error = (message: string, status: number) => response.status(status).json({ type: 'room:error', message })
+  const info = connectionInfo(request, '/room')
+  if (!info) return error('房间连接参数无效', 400)
+  if (request.method !== 'GET' && request.method !== 'POST') return error('不支持的请求方式', 405)
+  const message = request.method === 'POST' && typeof request.body === 'string' ? parseMessage(request.body) : undefined
+  if (request.method === 'POST' && !message) return error('消息格式不正确', 400)
+  if (message && message.type !== 'room:create' && Buffer.byteLength(request.body) > MAX_ACTION_MESSAGE_BYTES) return error('操作消息过大', 413)
+  let room = rooms.get(info.roomCode)
+  let includeData = request.query.data === '1'
+  if (!room) {
+    if (info.mode !== 'create' || message?.type !== 'room:create') return error('未找到该房间，可能已经过期', 404)
+    if (!message.match || !validMatch(message.match)) return error('数据包格式无效', 400)
+    room = {
+      match: sanitizeNewMatch(message.match), clients: new Map(), seats: { blue: info.token }, lastActiveAt: Date.now(), revision: 1,
+    }
+    rooms.set(info.roomCode, room)
+    includeData = true
+  } else if (!seatForToken(room, info.token)) {
+    if (info.mode === 'create') return error('房间码已存在，请重新创建', 409)
+    if (room.seats.red) return error('房间已满，只允许两名玩家', 409)
+    room.seats.red = info.token
+    room.lastActiveAt = Date.now()
+    room.revision = (room.revision ?? 0) + 1
+    broadcastState(info.roomCode, room)
+    includeData = true
+  }
+  const seat = seatForToken(room, info.token)!
+  if (message?.type === 'room:action') {
+    if ((message.action === 'start' || message.action === 'swap-seats') && !hasTwoPlayers(room)) return error('需要 1P 和 2P 均加入后才能进行此操作', 403)
+    const next = applyAction(room.match, message, seat)
+    if (!next) return error('当前操作不符合房间规则', 403)
+    room.match = next
+    room.lastActiveAt = Date.now()
+    room.revision = (room.revision ?? 0) + 1
+    if (message.action === 'swap-seats') swapSeats(room)
+    scheduleTimer(info.roomCode, room)
+    broadcastState(info.roomCode, room)
+  }
+  return response.json(statePayload(info.roomCode, room, seatForToken(room, info.token)!, includeData))
+})
 app.use(express.static(join(currentDir, '..', 'dist')))
 app.get('/{*path}', (_request, response) => response.sendFile(join(currentDir, '..', 'dist', 'index.html')))
 
@@ -65,6 +109,7 @@ wss.on('connection', (socket, request) => {
     if (!seat) {
       seat = 'red'
       room.seats.red = info.token
+      room.revision = (room.revision ?? 0) + 1
     }
     replaceTokenSocket(room, info.token, socket)
     room.clients.set(socket, { seat, token: info.token })
@@ -95,6 +140,7 @@ wss.on('connection', (socket, request) => {
         clients: new Map([[socket, { seat: 'blue', token: info.token }]]),
         seats: { blue: info.token },
         lastActiveAt: Date.now(),
+        revision: 1,
       }
       rooms.set(info.roomCode, room)
       return sendState(socket, info.roomCode, room, true)
@@ -114,6 +160,7 @@ wss.on('connection', (socket, request) => {
     if (!nextMatch) return sendError(socket, '当前操作不符合房间规则')
     room.match = nextMatch
     room.lastActiveAt = Date.now()
+    room.revision = (room.revision ?? 0) + 1
     if (message.action === 'swap-seats') swapSeats(room)
     scheduleTimer(info.roomCode, room)
     broadcastState(info.roomCode, room)
@@ -155,9 +202,9 @@ function applyAction(match: MatchState, message: RoomMessage, seat: Seat): Match
   }
 }
 
-function connectionInfo(request: IncomingMessage): ConnectionInfo | undefined {
+function connectionInfo(request: IncomingMessage, path = '/ws'): ConnectionInfo | undefined {
   const url = new URL(request.url ?? '/', 'http://localhost')
-  if (url.pathname !== '/ws') return undefined
+  if (url.pathname !== path) return undefined
   const roomCode = url.searchParams.get('room')?.toUpperCase() ?? ''
   const token = url.searchParams.get('client') ?? ''
   const mode = url.searchParams.get('mode')
@@ -209,6 +256,7 @@ function scheduleTimer(roomCode: string, room: Room) {
     const nextMatch = expireTimedPhase(activeRoom.match)
     if (nextMatch === activeRoom.match) return scheduleTimer(roomCode, activeRoom)
     activeRoom.match = nextMatch
+    activeRoom.revision = (activeRoom.revision ?? 0) + 1
     scheduleTimer(roomCode, activeRoom)
     broadcastState(roomCode, activeRoom)
   }, Math.max(0, deadline - Date.now()) + 20)
@@ -239,12 +287,17 @@ function compactMatch(match: MatchState) {
 function sendState(socket: WebSocket, roomCode: string, room: Room, includeData = false) {
   const info = room.clients.get(socket)
   if (!info) return
-  send(socket, {
+  send(socket, statePayload(roomCode, room, info.seat, includeData))
+}
+
+function statePayload(roomCode: string, room: Room, seat: Seat, includeData: boolean) {
+  return {
     type: 'room:state', roomCode, match: compactMatch(room.match),
+    revision: room.revision ?? 0,
     ...(includeData ? { data: room.match.data } : {}),
-    seat: info.seat,
+    seat,
     players: { blue: Boolean(room.seats.blue), red: Boolean(room.seats.red) },
-  })
+  }
 }
 
 function broadcastState(roomCode: string, room: Room, except?: WebSocket) {

@@ -16,8 +16,8 @@ await build({
 
 await writeFile(new URL('../dist/_routes.json', import.meta.url), JSON.stringify({
   version: 1,
-  include: ['/ws', '/health'],
+  include: ['/ws', '/room', '/health'],
   exclude: [],
 }, null, 2) + '\n')
 
-console.log('Pages bundle ready. Only /ws and /health invoke Functions.')
+console.log('Pages bundle ready. Only /ws, /room and /health invoke Functions.')

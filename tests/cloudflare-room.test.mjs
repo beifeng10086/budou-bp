@@ -58,6 +58,57 @@ test('Cloudflare room enforces seats and restores a reconnecting player', async 
   assert.deepEqual(restored.match.current.bans.blue, [data.ninjas[0].id])
 })
 
+test('HTTPS fallback shares rooms, permissions and state with WebSocket players', async (context) => {
+  const data = JSON.parse(await readFile(catalogPath, 'utf8'))
+  const code = randomCode()
+  const hostToken = randomToken()
+  const guestToken = randomToken()
+  async function request(token, mode, message, includeData = false) {
+    const url = new URL(baseUrl.replace(/^ws/, 'http'))
+    url.pathname = '/room'
+    url.searchParams.set('room', code)
+    url.searchParams.set('client', token)
+    url.searchParams.set('mode', mode)
+    if (includeData) url.searchParams.set('data', '1')
+    const response = await fetch(url, {
+      method: message ? 'POST' : 'GET',
+      headers: message ? { 'Content-Type': 'application/json' } : undefined,
+      body: message ? JSON.stringify(message) : undefined,
+      signal: AbortSignal.timeout(20000),
+    })
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+    return { status: response.status, payload: await response.json() }
+  }
+  assert.equal((await request(hostToken, 'join')).status, 404)
+  const created = await request(hostToken, 'create', { type: 'room:create', match: initialMatch(data) })
+  assert.equal(created.status, 200)
+  assert.equal(created.payload.seat, 'blue')
+  assert.equal(created.payload.data.id, data.id)
+
+  const guest = await connect(code, 'join', guestToken)
+  context.after(() => guest.close())
+  assert.equal((await guest.next('room:state')).seat, 'red')
+  assert.equal((await request(randomToken(), 'join')).status, 409)
+  assert.equal((await request(guestToken, 'join', { type: 'room:action', action: 'start' })).status, 403)
+
+  const started = await request(hostToken, 'join', { type: 'room:action', action: 'start' })
+  assert.equal(started.payload.data, undefined)
+  assert.ok(started.payload.revision > created.payload.revision)
+  assert.equal((await guest.next('room:state')).match.status, 'playing')
+  assert.equal((await request(guestToken, 'join', { type: 'room:action', action: 'ninja', itemId: data.ninjas[0].id })).status, 403)
+  await request(hostToken, 'join', { type: 'room:action', action: 'ninja', itemId: data.ninjas[0].id })
+  assert.equal((await guest.next('room:state')).match.current.phase.turn, 'red')
+  guest.send(JSON.stringify({ type: 'room:action', action: 'ninja', itemId: data.ninjas[1].id }))
+  await guest.next('room:state')
+
+  const snapshot = await request(hostToken, 'join')
+  assert.deepEqual(snapshot.payload.match.current.bans, { blue: [data.ninjas[0].id], red: [data.ninjas[1].id] })
+  assert.equal(snapshot.payload.data, undefined)
+  const restored = await request(hostToken, 'join', undefined, true)
+  assert.equal(restored.payload.seat, 'blue')
+  assert.equal(restored.payload.data.id, data.id)
+})
+
 function initialMatch(data) {
   return {
     settings: { title: 'Worker integration test', roundBan: true },
