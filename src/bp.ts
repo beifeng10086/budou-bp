@@ -42,6 +42,7 @@ export function createMatch(data: DataPackage, title: string, roundBan: boolean,
     settings: {
       title: title.trim() || '武斗对局', roundBan, bestOf: bestOfValue(options.bestOf), turnSeconds: 60,
       noTimer: options.noTimer === true,
+      thirdPartyHost: options.thirdPartyHost === true,
       repeatScrolls: options.repeatScrolls === true, repeatSummons: options.repeatSummons === true,
       playerNames: { blue: normalizeName(options.playerNames?.blue, '1P'), red: normalizeName(options.playerNames?.red, '2P') },
     },

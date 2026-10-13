@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { canSelectNinja, canSelectTimedItem, chooseNinja, chooseTimedBatch, chooseTimedItem, createMatch, endMatch, expireTimedPhase, nextRoundProblem, recordWinner, resetMatch, startMatch, startNextRound } from '../src/bp.ts'
 import { applyRoomAction } from '../src/room-actions.ts'
+import { availableSeat, creatorSeats, roleForToken } from '../src/room-members.ts'
 import type { BestOf, DataPackage, MatchState, Seat } from '../src/types.ts'
 
 const items = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => ({ id: prefix + i, name: prefix + i, tags: [] }))
@@ -93,6 +94,35 @@ test('late commands cannot override a timed-out turn', () => {
   match.current.phase.expiresAt = Date.now() - 1
   assert.equal(applyRoomAction(match, { action: 'ninja', itemId: data.ninjas[0].id }, 'blue'), undefined)
   assert.equal(expireTimedPhase(match).current.bans.blue.length, 1)
+})
+
+test('third-party host manages the series without selecting or taking a player seat', () => {
+  const seats = creatorSeats(true, 'owner')
+  assert.deepEqual(seats, { host: 'owner' })
+  assert.equal(roleForToken(seats, 'owner'), 'host')
+  assert.equal(availableSeat(seats, 'red'), 'red')
+  seats.red = 'player2'
+  assert.equal(availableSeat(seats, 'red'), undefined)
+  assert.equal(availableSeat(seats, null), 'blue')
+  seats.blue = 'player1'
+  assert.equal(availableSeat(seats, 'host'), undefined)
+  let match = createMatch(data, 'third-party', true, { thirdPartyHost: true, playerNames: { blue: 'one', red: 'two' } })
+  for (const seat of ['blue', 'red'] as const) for (const action of ['start', 'swap-seats'] as const) assert.equal(applyRoomAction(match, { action }, seat), undefined)
+  match = applyRoomAction(match, { action: 'swap-seats' }, 'host')!
+  assert.deepEqual(match.settings.playerNames, { blue: 'two', red: 'one' })
+  match = applyRoomAction(match, { action: 'start' }, 'host')!
+  assert.equal(applyRoomAction(match, { action: 'ninja', itemId: 'n0' }, 'host'), undefined)
+  assert.equal(applyRoomAction(match, { action: 'swap-seats' }, 'host'), undefined)
+  assert.notEqual(applyRoomAction(match, { action: 'ninja', itemId: 'n0' }, 'blue'), undefined)
+  for (let i = 0; i < 10; i++) match = chooseNinja(match, data.ninjas[i].id)
+  assert.equal(applyRoomAction(match, { action: 'timed-batch', round: 1, phase: 'scroll', itemIds: ['m0', 'm1', 'm2'] }, 'host'), undefined)
+  match = finishRound(match, 'blue')
+  const undecided = { ...match, current: { ...match.current, winner: null } }
+  assert.equal(applyRoomAction(undecided, { action: 'winner', winner: 'blue' }, 'blue'), undefined)
+  assert.notEqual(applyRoomAction(undecided, { action: 'winner', winner: 'blue' }, 'host'), undefined)
+  assert.equal(applyRoomAction(match, { action: 'next' }, 'blue'), undefined)
+  assert.equal(applyRoomAction(match, { action: 'next' }, 'host')!.current.number, 2)
+  assert.equal(resetMatch(match).settings.thirdPartyHost, true)
 })
 
 test('ordered batches are atomic, independent by seat, reject stale phases and enforce history', () => {

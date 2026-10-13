@@ -8,17 +8,18 @@ import {
   createMatch, expireTimedPhase, renamePlayer,
 } from '../src/bp.ts'
 import { applyRoomAction, type RoomAction } from '../src/room-actions.ts'
-import type { DataPackage, MatchState, Seat } from '../src/types.ts'
+import type { DataPackage, MatchState, RoomRole, Seat } from '../src/types.ts'
+import { availableSeat, creatorSeats, roleForToken, type RoomSeats } from '../src/room-members.ts'
 
 const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000
 const MAX_CREATE_MESSAGE_BYTES = 2 * 1024 * 1024
 const MAX_ACTION_MESSAGE_BYTES = 16 * 1024
 
-type ClientInfo = { seat: Seat; token: string }
+type ClientInfo = { seat: RoomRole; token: string }
 type Room = {
   match: MatchState
   clients: Map<WebSocket, ClientInfo>
-  seats: Partial<Record<Seat, string>>
+  seats: RoomSeats
   lastActiveAt: number
   revision?: number
   timer?: ReturnType<typeof setTimeout>
@@ -37,7 +38,7 @@ type RoomMessage = {
   winner?: Seat
 }
 
-type ConnectionInfo = { roomCode: string; mode: 'create' | 'join'; token: string; name: string | null }
+type ConnectionInfo = { roomCode: string; mode: 'create' | 'join'; token: string; name: string | null; requestedSeat: string | null }
 
 const port = Number(process.env.PORT ?? 8787)
 const rooms = new Map<string, Room>()
@@ -61,15 +62,16 @@ app.all('/room', (request, response) => {
     if (info.mode !== 'create' || message?.type !== 'room:create') return error('未找到该房间，可能已经过期', 404)
     if (!message.match || !validMatch(message.match)) return error('数据包格式无效', 400)
     room = {
-      match: sanitizeNewMatch(message.match), clients: new Map(), seats: { blue: info.token }, lastActiveAt: Date.now(), revision: 1,
+      match: sanitizeNewMatch(message.match), clients: new Map(), seats: creatorSeats(message.match.settings.thirdPartyHost === true, info.token), lastActiveAt: Date.now(), revision: 1,
     }
     rooms.set(info.roomCode, room)
     includeData = true
   } else if (!seatForToken(room, info.token)) {
     if (info.mode === 'create') return error('房间码已存在，请重新创建', 409)
-    if (room.seats.red) return error('房间已满，只允许两名玩家', 409)
-    room.seats.red = info.token
-    room.match = renamePlayer(room.match, 'red', info.name)
+    const seat = availableSeat(room.seats, info.requestedSeat)
+    if (!seat) return error('所选席位已有人或房间已满', 409)
+    room.seats[seat] = info.token
+    room.match = renamePlayer(room.match, seat, info.name)
     room.lastActiveAt = Date.now()
     room.revision = (room.revision ?? 0) + 1
     broadcastState(info.roomCode, room)
@@ -101,7 +103,7 @@ server.on('upgrade', (request, networkSocket, head) => {
   const room = rooms.get(info.roomCode)
   if (info.mode === 'join' && !room) return rejectUpgrade(networkSocket, 404, 'Room not found')
   if (room && !seatForToken(room, info.token) && info.mode === 'create') return rejectUpgrade(networkSocket, 409, 'Room already exists')
-  if (room && !seatForToken(room, info.token) && room.seats.red) return rejectUpgrade(networkSocket, 409, 'Room is full')
+  if (room && !seatForToken(room, info.token) && !availableSeat(room.seats, info.requestedSeat)) return rejectUpgrade(networkSocket, 409, 'Requested seat is occupied or room is full')
   wss.handleUpgrade(request, networkSocket, head, (socket) => wss.emit('connection', socket, request))
 })
 
@@ -113,9 +115,10 @@ wss.on('connection', (socket, request) => {
   if (room) {
     let seat = seatForToken(room, info.token)
     if (!seat) {
-      seat = 'red'
-      room.seats.red = info.token
-      room.match = renamePlayer(room.match, 'red', info.name)
+      seat = availableSeat(room.seats, info.requestedSeat)
+      if (!seat) return socket.close(1008, 'Room is full')
+      room.seats[seat] = info.token
+      room.match = renamePlayer(room.match, seat, info.name)
       room.revision = (room.revision ?? 0) + 1
     }
     replaceTokenSocket(room, info.token, socket)
@@ -144,8 +147,8 @@ wss.on('connection', (socket, request) => {
       if (!message.match || !validMatch(message.match)) return sendError(socket, '数据包格式无效')
       room = {
         match: sanitizeNewMatch(message.match),
-        clients: new Map([[socket, { seat: 'blue', token: info.token }]]),
-        seats: { blue: info.token },
+        clients: new Map([[socket, { seat: message.match.settings.thirdPartyHost === true ? 'host' : 'blue', token: info.token }]]),
+        seats: creatorSeats(message.match.settings.thirdPartyHost === true, info.token),
         lastActiveAt: Date.now(),
         revision: 1,
       }
@@ -188,7 +191,7 @@ function connectionInfo(request: IncomingMessage, path = '/ws'): ConnectionInfo 
   if (!/^[A-Z0-9]{5,8}$/.test(roomCode)) return undefined
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(token)) return undefined
   if (mode !== 'create' && mode !== 'join') return undefined
-  return { roomCode, token, mode, name: url.searchParams.get('name') }
+  return { roomCode, token, mode, name: url.searchParams.get('name'), requestedSeat: url.searchParams.get('seat') }
 }
 
 function rejectUpgrade(socket: Duplex, status: number, message: string) {
@@ -197,10 +200,8 @@ function rejectUpgrade(socket: Duplex, status: number, message: string) {
   socket.destroy()
 }
 
-function seatForToken(room: Room, token: string): Seat | undefined {
-  if (room.seats.blue === token) return 'blue'
-  if (room.seats.red === token) return 'red'
-  return undefined
+function seatForToken(room: Room, token: string): RoomRole | undefined {
+  return roleForToken(room.seats, token)
 }
 
 function replaceTokenSocket(room: Room, token: string, replacement: WebSocket) {
@@ -216,7 +217,7 @@ function swapSeats(room: Room) {
   const blueToken = room.seats.blue
   room.seats.blue = room.seats.red
   room.seats.red = blueToken
-  for (const info of room.clients.values()) info.seat = info.seat === 'blue' ? 'red' : 'blue'
+  for (const info of room.clients.values()) if (info.seat !== 'host') info.seat = info.seat === 'blue' ? 'red' : 'blue'
 }
 
 function hasTwoPlayers(room: Room) {
@@ -267,7 +268,7 @@ function sendState(socket: WebSocket, roomCode: string, room: Room, includeData 
   send(socket, statePayload(roomCode, room, info.seat, includeData))
 }
 
-function statePayload(roomCode: string, room: Room, seat: Seat, includeData: boolean) {
+function statePayload(roomCode: string, room: Room, seat: RoomRole, includeData: boolean) {
   return {
     type: 'room:state', roomCode, match: compactMatch(room.match),
     serverTime: Date.now(),

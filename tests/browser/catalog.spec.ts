@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { searchFor } from './search-helper'
 
 async function choose(page: import('@playwright/test').Page) {
   while (await page.locator('.item-tile:not([disabled])').count() === 0 && await page.getByTitle('下一页', { exact: true }).isEnabled()) await page.getByTitle('下一页', { exact: true }).click()
@@ -45,8 +46,8 @@ for (const width of [320, 390, 844, 1280, 1920]) {
     const artwork = page.locator('.ninja-artwork').first()
     await expect.poll(() => artwork.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
     const artworkFill = await artwork.evaluate(img => ({ fit: getComputedStyle(img).objectFit, height: img.clientHeight, frameHeight: img.parentElement!.clientHeight }))
-    expect(artworkFill.fit).toBe('cover')
-    expect(artworkFill.height).toBeGreaterThanOrEqual(artworkFill.frameHeight - 1)
+    expect(artworkFill.fit).toBe('contain')
+    expect(artworkFill.height).toBeGreaterThanOrEqual(artworkFill.frameHeight - 28)
     await page.screenshot({ path: 'artifacts/arena-' + width + '.png' })
     const confirmBox = await page.getByRole('button', { name: '确认禁用' }).boundingBox()
     expect(confirmBox!.x).toBeGreaterThanOrEqual(0)
@@ -60,12 +61,12 @@ for (const width of [320, 390, 844, 1280, 1920]) {
       await page.screenshot({ path: 'artifacts/portrait-' + width + '.png' })
       await page.getByTitle('切换横屏', { exact: true }).click()
     }
-    await page.getByRole('searchbox').fill('不立土')
+    await searchFor(page, '不立土')
     await expect(page.locator('.item-tile')).toHaveCount(1)
-    await page.getByRole('searchbox').clear()
-    await page.getByLabel('忍者评级').selectOption('S')
+    await searchFor(page, '')
+    await page.getByRole('group', { name: '忍者评级' }).getByRole('button', { name: 'S', exact: true }).click()
     await expect(page.locator('.item-tile .rank').first()).toHaveText('S')
-    await page.getByLabel('忍者评级').selectOption('')
+    await page.getByRole('group', { name: '忍者评级' }).getByRole('button', { name: '全部', exact: true }).click()
     for (let i = 0; i < 10; i++) await choose(page)
     await expect(page.locator('.stage-status strong')).toHaveText('选择秘卷')
     await page.screenshot({ path: 'artifacts/scroll-' + width + '.png' })

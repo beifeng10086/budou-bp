@@ -149,6 +149,50 @@ test('new settings, own names and host seat swap persist across transports', asy
   await guest.next('room:error')
 })
 
+test('independent host, targeted seats and control permissions persist across transports', async (context) => {
+  const data = JSON.parse(await readFile(catalogPath, 'utf8'))
+  const code = randomCode(), ownerToken = randomToken(), firstToken = randomToken(), secondToken = randomToken()
+  async function request(token, mode, message, seat) {
+    const url = new URL(baseUrl.replace(/^ws/, 'http')); url.pathname = '/room'
+    url.searchParams.set('room', code); url.searchParams.set('client', token); url.searchParams.set('mode', mode)
+    if (seat) url.searchParams.set('seat', seat)
+    const response = await fetch(url, { method: message ? 'POST' : 'GET', headers: message ? { 'Content-Type': 'application/json' } : undefined, body: message ? JSON.stringify(message) : undefined, signal: AbortSignal.timeout(20000) })
+    return { status: response.status, payload: await response.json() }
+  }
+  const candidate = initialMatch(data); candidate.settings.thirdPartyHost = true; candidate.settings.noTimer = true
+  let result = await request(ownerToken, 'create', { type: 'room:create', match: candidate })
+  assert.equal(result.payload.seat, 'host')
+  assert.deepEqual(result.payload.players, { blue: false, red: false })
+  const command = (action, extra = {}) => ({ type: 'room:action', action, ...extra })
+  assert.equal((await request(ownerToken, 'join', command('start'))).status, 403)
+  const second = await connect(code, 'join', secondToken, 'second', 'red')
+  context.after(() => second.close())
+  assert.equal((await second.next('room:state')).seat, 'red')
+  assert.equal((await request(randomToken(), 'join', undefined, 'red')).status, 409)
+  result = await request(firstToken, 'join', undefined, 'blue')
+  assert.equal(result.payload.seat, 'blue'); await second.next('room:state')
+  assert.equal((await request(randomToken(), 'join', undefined, 'host')).status, 409)
+  assert.equal((await request(firstToken, 'join', command('start', { seat: 'host' }))).status, 403)
+  assert.equal((await request(firstToken, 'join', command('swap-seats'))).status, 403)
+  result = await request(ownerToken, 'join', command('swap-seats'))
+  assert.equal(result.payload.seat, 'host')
+  assert.equal((await second.next('room:state')).seat, 'blue')
+  assert.equal((await request(firstToken, 'join')).payload.seat, 'red')
+  const owner = await connect(code, 'join', ownerToken)
+  context.after(() => owner.close())
+  assert.equal((await owner.next('room:state')).seat, 'host'); await second.next('room:state')
+  result = await request(ownerToken, 'join', command('start'))
+  assert.equal(result.payload.match.status, 'playing')
+  await owner.next('room:state'); await second.next('room:state')
+  assert.equal((await request(ownerToken, 'join', command('ninja', { itemId: data.ninjas[0].id, seat: 'blue' }))).status, 403)
+  assert.equal((await request(firstToken, 'join', command('ninja', { itemId: data.ninjas[0].id }))).status, 403)
+  assert.equal((await request(secondToken, 'join', command('ninja', { itemId: data.ninjas[0].id }))).status, 200)
+  assert.equal((await owner.next('room:state')).match.current.bans.blue.length, 1)
+  assert.equal((await request(ownerToken, 'join', command('swap-seats'))).status, 403)
+  assert.equal((await request(ownerToken, 'join', command('timed-batch', { round: 1, phase: 'scroll', itemIds: data.scrolls.slice(0, 3).map(item => item.id) }))).status, 403)
+  assert.equal((await request(ownerToken, 'join')).payload.seat, 'host')
+})
+
 test('no-timer ordered batches are atomic across WebSocket and HTTPS', async (context) => {
   const data = JSON.parse(await readFile(catalogPath, 'utf8'))
   data.summons = data.scrolls.map(item => ({ ...item }))
@@ -241,8 +285,8 @@ function initialMatch(data) {
   }
 }
 
-async function connect(code, mode, token, name = '') {
-  const url = `${baseUrl}?room=${code}&mode=${mode}&client=${token}&name=${encodeURIComponent(name)}`
+async function connect(code, mode, token, name = '', seat = '') {
+  const url = `${baseUrl}?room=${code}&mode=${mode}&client=${token}&name=${encodeURIComponent(name)}${seat ? '&seat=' + seat : ''}`
   const socket = new WebSocket(url, { handshakeTimeout: 40000 })
   const messages = []
   const waiters = []

@@ -1,4 +1,5 @@
 export type Seat = 'blue' | 'red'
+export type RoomRole = Seat | 'host'
 export type PhaseKind = 'ban' | 'pick' | 'scroll' | 'summon' | 'complete'
 export type BestOf = 3 | 5 | 7 | 0
 
@@ -35,6 +36,7 @@ export interface RoomSettings {
   playerNames?: Record<Seat, string>
   turnSeconds?: number
   noTimer?: boolean
+  thirdPartyHost?: boolean
   repeatScrolls?: boolean
   repeatSummons?: boolean
 }

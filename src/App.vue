@@ -9,7 +9,7 @@ import { RoomTransport, type RoomPayload } from './room-transport'
 import { bestOfLabel, createMatch, endMatch, expireTimedPhase, nextRoundProblem, normalizeName, playerName, recordWinner, resetMatch, seriesFinished, startMatch, startNextRound, swapPlayerNames, poolProblem } from './bp'
 import { applyRoomAction, type ActionMessage, type RoomAction } from './room-actions'
 import { copyText } from './clipboard'
-import type { BestOf, DataPackage, MatchState, Seat, StoredPackage } from './types'
+import type { BestOf, DataPackage, MatchState, RoomRole, Seat, StoredPackage } from './types'
 import { isQuotaFailure, nextQuotaReset, quotaExhausted, validQuota, type QuotaSnapshot } from './quota'
 
 const CUSTOM_KEY = 'budou-bp-custom-packages'
@@ -65,12 +65,15 @@ const roundBan = ref(true)
 const repeatScrolls = ref(false)
 const repeatSummons = ref(false)
 const noTimer = ref(false)
+const thirdPartyHost = ref(false)
+const requestedSeat = ref(new URLSearchParams(location.search).get('seat') ?? '')
+const inviteSeat = ref<Seat | ''>('')
 const nickname = ref(localStorage.getItem('wudou-player-name') ?? '')
 const secondName = ref('')
 const joinCode = ref('')
 const roomCode = ref('')
 const online = ref(false)
-const onlineSeat = ref<Seat>('blue')
+const onlineSeat = ref<RoomRole>('blue')
 const players = ref({ blue: true, red: false })
 const connectionLabel = ref('')
 const catalogLoading = ref(true)
@@ -91,12 +94,13 @@ let media: MediaQueryList | undefined
 let serverOffset = 0
 const detectMobile = () => { mobile.value = media?.matches ?? false }
 const current = computed(() => match.value.current)
-const isHost = computed(() => !online.value || onlineSeat.value === 'blue')
-const roleLabel = computed(() => online.value ? '你是 ' + (onlineSeat.value === 'blue' ? '1P（房主）' : '2P') : '本机双人演练')
+const isHost = computed(() => !online.value || (match.value.settings.thirdPartyHost ? onlineSeat.value === 'host' : onlineSeat.value === 'blue'))
+const roleLabel = computed(() => online.value ? '你是 ' + (onlineSeat.value === 'host' ? '房主（观战）' : onlineSeat.value === 'blue' ? match.value.settings.thirdPartyHost ? '1P' : '1P（房主）' : '2P') : '本机双人演练')
+const bothJoined = computed(() => players.value.blue && players.value.red)
 const rounds = computed(() => [...match.value.history, ...(match.value.history.some(r => r.number === current.value.number) ? [] : [current.value])])
 const wins = computed(() => ({ blue: rounds.value.filter(r => r.winner === 'blue').length, red: rounds.value.filter(r => r.winner === 'red').length }))
 const exhausted = computed(() => nextRoundProblem(match.value))
-const inviteUrl = computed(() => location.origin + location.pathname + '?room=' + roomCode.value)
+const inviteUrl = computed(() => location.origin + location.pathname + '?room=' + roomCode.value + (inviteSeat.value ? '&seat=' + inviteSeat.value : ''))
 const artworkLibrary = computed(() => packages.value.flatMap(pack => pack.ninjas).filter(item => item.artwork))
 const createSettings = () => ({ bestOf: bestOf.value, noTimer: noTimer.value, repeatScrolls: repeatScrolls.value, repeatSummons: repeatSummons.value, playerNames: { blue: normalizeName(nickname.value, '1P'), red: normalizeName(secondName.value, '2P') } })
 
@@ -149,7 +153,7 @@ function createOnlineRoom() {
   if (onlineBlocked.value) { connectionLabel.value = '今日共享服务额度已用尽，请使用本机演练；北京时间 08:00 重置'; return }
   saveNickname()
   const code = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
-  openRoom('create', code, createMatch(selectedPackage.value, title.value, roundBan.value, createSettings()))
+  openRoom('create', code, createMatch(selectedPackage.value, title.value, roundBan.value, { ...createSettings(), thirdPartyHost: thirdPartyHost.value, ...(thirdPartyHost.value ? { playerNames: { blue: '1P', red: '2P' } } : {}) }))
 }
 function joinOnlineRoom() {
   if (onlineBlocked.value) { connectionLabel.value = '今日共享服务额度已用尽，请使用本机演练；北京时间 08:00 重置'; return }
@@ -175,6 +179,7 @@ async function openRoom(mode: 'create' | 'join', code: string, newMatch?: MatchS
   const endpoint = new URL(wsUrl)
   endpoint.searchParams.set('room', code); endpoint.searchParams.set('mode', mode); endpoint.searchParams.set('client', token)
   endpoint.searchParams.set('name', normalizeName(nickname.value, mode === 'create' ? '1P' : '2P'))
+  if (mode === 'join' && (requestedSeat.value === 'blue' || requestedSeat.value === 'red')) endpoint.searchParams.set('seat', requestedSeat.value)
   transport = new RoomTransport({
     endpoint: endpoint.toString(), mode, match: newMatch,
     onQuotaExhausted: markQuotaExhausted,
@@ -200,6 +205,21 @@ function beginMatch() {
   const problem = poolProblem(match.value)
   if (problem) { connectionLabel.value = problem; return }
   if (online.value) action('start'); else match.value = startMatch(match.value)
+  void enterLandscape()
+}
+async function enterLandscape() {
+  if (!mobile.value || orientation.value !== 'landscape') return
+  const deviceOrientation = window.screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> }
+  if (!deviceOrientation?.lock) return
+  try {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen()
+    await deviceOrientation.lock('landscape')
+  } catch { /* Unsupported browsers retain the responsive landscape layout. */ }
+}
+function toggleOrientation() {
+  orientation.value = orientation.value === 'landscape' ? 'portrait' : 'landscape'
+  if (orientation.value === 'landscape') void enterLandscape()
+  else { window.screen.orientation?.unlock?.(); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined) }
 }
 function nextRound() { if (online.value) action('next'); else match.value = startNextRound(match.value) }
 function restart() { if (online.value) action('new-match'); else match.value = resetMatch(match.value) }
@@ -207,7 +227,7 @@ function finish() { if (online.value) action('end'); else match.value = endMatch
 function selectWinner(seat: Seat) { if (online.value) action('winner', { winner: seat }); else match.value = recordWinner(match.value, seat) }
 function swapSeats() { if (online.value) action('swap-seats'); else match.value = swapPlayerNames(match.value) }
 function rename(event: Event, seat: Seat) { action('rename', { seat, name: (event.target as HTMLInputElement).value }) }
-function backHome() { connectionAttempt++; transport?.close(); transport = null; online.value = false; screen.value = 'home'; connectionLabel.value = ''; history.replaceState({}, '', location.pathname); if (!onlineBlocked.value) void refreshQuota() }
+function backHome() { connectionAttempt++; transport?.close(); transport = null; online.value = false; screen.value = 'home'; connectionLabel.value = ''; window.screen.orientation?.unlock?.(); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); history.replaceState({}, '', location.pathname); if (!onlineBlocked.value) void refreshQuota() }
 function handleImport(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -220,7 +240,8 @@ function handleImport(event: Event) {
     localStorage.setItem(CUSTOM_KEY, JSON.stringify(packages.value.filter(item => item.isCustom)))
   }).catch(() => { connectionLabel.value = '数据包无效：至少需要 22 名忍者、9 个秘卷、9 个通灵，且各项 ID 不重复。' }).finally(() => { input.value = '' })
 }
-async function copyShareLink() {
+async function copyShareLink(seat: Seat | '' = '') {
+  inviteSeat.value = seat
   const success = await copyText(inviteUrl.value)
   copyResult.value = success ? '邀请链接已复制' : '自动复制未成功，请长按下方链接复制'
   connectionLabel.value = copyResult.value
@@ -260,8 +281,9 @@ async function exportImage() {
         <p v-if="catalogError" class="data-note">{{ catalogError }} <button class="text-command" @click="loadCatalog">重试</button></p>
       </div>
       <div class="data-actions"><span>{{ selectedPackage.ninjas.length }} 忍者 · {{ selectedPackage.scrolls.length }} 秘卷 · {{ selectedPackage.summons.length }} 通灵</span><label class="import-control"><CloudUpload :size="17" />导入数据包<input type="file" accept="application/json,.json" @change="handleImport" /></label></div>
+      <fieldset class="host-mode"><legend>联网房主</legend><label><input v-model="thirdPartyHost" type="radio" :value="false" />1P 兼房主</label><label><input v-model="thirdPartyHost" type="radio" :value="true" />第三方房主</label></fieldset>
       <div class="home-actions"><button class="button primary" :disabled="catalogLoading" @click="createLocalMatch"><Swords :size="19" />本机演练</button><button class="button secondary" :class="{ 'online-unavailable': onlineBlocked }" :disabled="catalogLoading" @click="createOnlineRoom"><Users :size="19" />创建共享房间</button></div>
-      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :class="{ 'online-unavailable': onlineBlocked }" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div></section>
+      <section class="join-panel prominent-join"><h2><Link :size="20" />通过房间码加入</h2><div class="join-row"><input v-model="joinCode" class="text-input room-input" maxlength="8" placeholder="输入房间码" aria-label="房间码" @keyup.enter="joinOnlineRoom" /><button class="button primary" :class="{ 'online-unavailable': onlineBlocked }" @click="joinOnlineRoom"><Users :size="18" />加入房间</button></div><fieldset class="join-seat"><legend>加入席位</legend><label v-for="option in [{ value: '', label: '自动' }, { value: 'blue', label: '1P' }, { value: 'red', label: '2P' }]" :key="option.value"><input v-model="requestedSeat" type="radio" :value="option.value" />{{ option.label }}</label></fieldset></section>
       <p v-if="connectionLabel" class="connection-note" role="status">{{ connectionLabel }}</p>
       <details class="advanced-settings"><summary>对局设置 <span>{{ roundBan ? '小局 Ban' : '首局 Ban' }} · {{ noTimer ? '无计时' : '60 秒' }}</span></summary><label class="field-label">对局名称<input v-model="title" class="text-input" maxlength="20" /></label><div class="rules-settings">
         <label><span>无计时</span><input v-model="noTimer" type="checkbox" role="switch" /></label>
@@ -274,18 +296,19 @@ async function exportImage() {
       <header class="match-header">
         <button class="icon-command" title="返回首页" @click="backHome"><ChevronLeft :size="19" /></button>
         <div class="match-title"><span>{{ bestOfLabel(match) }} · 第 {{ current.number }} 局</span><strong>{{ match.settings.title }}</strong></div>
-        <button v-if="mobile" class="icon-command" :title="orientation === 'landscape' ? '切换竖屏' : '切换横屏'" @click="orientation = orientation === 'landscape' ? 'portrait' : 'landscape'"><Smartphone v-if="orientation === 'landscape'" :size="18" /><Monitor v-else :size="18" /></button><span v-else></span>
+        <button v-if="mobile" class="icon-command" :title="orientation === 'landscape' ? '切换竖屏' : '切换横屏'" @click="toggleOrientation"><Smartphone v-if="orientation === 'landscape'" :size="18" /><Monitor v-else :size="18" /></button><span v-else></span>
       </header>
-      <div v-if="online" class="share-strip"><span>房间 {{ roomCode }}</span><em>{{ roleLabel }}</em><button @click="copyShareLink"><Copy :size="14" />复制邀请链接</button><small role="status">{{ connectionLabel }}</small></div>
+      <div v-if="online" class="share-strip"><span>房间 {{ roomCode }}</span><em>{{ roleLabel }}</em><button @click="copyShareLink()"><Copy :size="14" />复制邀请链接</button><small role="status">{{ connectionLabel }}</small></div>
       <section v-if="match.status === 'setup'" class="ready-panel">
-        <span class="ready-state" :class="{ joined: !online || players.red }">{{ online ? players.red ? '2P 已加入' : '等待 2P 加入' : '本机双方就绪' }}</span>
-        <div class="ready-names"><label v-for="seat in (['blue', 'red'] as const)" :key="seat" class="field-label"><span>{{ seat === 'blue' ? '1P · 房主' : '2P' }}</span><input class="text-input" :value="playerName(match, seat)" maxlength="16" :disabled="online && onlineSeat !== seat" @change="rename($event, seat)" /></label></div>
+        <span class="ready-state" :class="{ joined: !online || bothJoined }">{{ online ? match.settings.thirdPartyHost ? bothJoined ? '1P / 2P 已加入' : '等待选手加入' : players.red ? '2P 已加入' : '等待 2P 加入' : '本机双方就绪' }}</span>
+        <div v-if="online && isHost && match.settings.thirdPartyHost" class="player-invitations"><button v-for="seat in (['blue', 'red'] as const)" :key="seat" class="button secondary" @click="copyShareLink(seat)"><Copy :size="16" />邀请 {{ seat === 'blue' ? '1P' : '2P' }} · {{ players[seat] ? '已加入' : '待加入' }}</button></div>
+        <div class="ready-names"><label v-for="seat in (['blue', 'red'] as const)" :key="seat" class="field-label"><span>{{ seat === 'blue' ? online && match.settings.thirdPartyHost ? '1P' : '1P · 房主' : '2P' }}</span><input class="text-input" :value="playerName(match, seat)" maxlength="16" :disabled="online && onlineSeat !== seat" @change="rename($event, seat)" /></label></div>
         <p>{{ bestOfLabel(match) }} · {{ match.settings.roundBan ? '每小局 Ban' : '首局 Ban' }} · {{ match.settings.noTimer ? '无计时' : '全阶段 60 秒' }}</p>
         <p>秘卷{{ match.settings.repeatScrolls ? '可重复' : '不可重复' }} · 通灵{{ match.settings.repeatSummons ? '可重复' : '不可重复' }}</p>
-        <div v-if="isHost" class="ready-actions"><button class="button primary" :disabled="online && !players.red" @click="beginMatch"><Swords :size="18" />开始 BP</button><button class="button secondary" :disabled="online && !players.red" @click="swapSeats"><Users :size="18" />交换 1P / 2P</button></div>
-        <p v-else>等待 1P 开始 BP</p><p v-if="!online && connectionLabel" role="status">{{ connectionLabel }}</p>
+        <div v-if="isHost" class="ready-actions"><button class="button primary" :disabled="online && !bothJoined" @click="beginMatch"><Swords :size="18" />开始 BP</button><button class="button secondary" :disabled="online && !bothJoined" @click="swapSeats"><Users :size="18" />交换 1P / 2P</button></div>
+        <p v-else>等待{{ match.settings.thirdPartyHost ? '房主' : '1P' }}开始 BP</p><p v-if="!online && connectionLabel" role="status">{{ connectionLabel }}</p>
       </section>
-      <ArenaBoard v-if="match.status === 'playing'" :match="match" :seconds="secondsLeft" :online="online" :seat="onlineSeat" :wins="wins" :artworks="artworkLibrary" :portrait="mobile && orientation === 'portrait'" @choose="(itemId, seat, timed) => action(timed ? 'timed' : 'ninja', { itemId, seat })" @batch="(itemIds, seat, phase, round) => action('timed-batch', { itemIds, seat, phase, round })" />
+      <ArenaBoard v-if="match.status === 'playing'" :match="match" :seconds="secondsLeft" :online="online" :seat="onlineSeat" :wins="wins" :artworks="artworkLibrary" :portrait="mobile && orientation === 'portrait'" :landscape="mobile && orientation === 'landscape'" @choose="(itemId, seat, timed) => action(timed ? 'timed' : 'ninja', { itemId, seat })" @batch="(itemIds, seat, phase, round) => action('timed-batch', { itemIds, seat, phase, round })" />
       <section v-if="current.phase.kind === 'complete'" ref="exportTarget" class="result-board">
         <div class="result-heading"><span>{{ bestOfLabel(match) }} · 第 {{ current.number }} 局完整阵容 · {{ wins.blue }} : {{ wins.red }}</span><strong>{{ match.settings.title }}</strong></div>
         <div class="result-columns"><div v-for="seat in (['blue', 'red'] as const)" :key="seat" class="result-side" :class="seat"><h2><small>{{ seat === 'blue' ? '1P' : '2P' }}</small> {{ playerName(match, seat) }}</h2><ResultList title="禁用" :items="current.bans[seat]" :source="match.data.ninjas" /><ResultList title="忍者" :items="current.picks[seat]" :source="match.data.ninjas" /><ResultList title="秘卷" :items="current.scrolls[seat]" :source="match.data.scrolls" /><ResultList title="通灵" :items="current.summons[seat]" :source="match.data.summons" /></div></div>
@@ -297,7 +320,7 @@ async function exportImage() {
       <section v-if="exhausted" class="exhausted-panel" role="status"><strong>{{ exhausted }}</strong><div v-if="isHost" class="ready-actions"><button class="button primary" @click="restart"><RotateCcw :size="18" />重开本场</button><button class="button secondary" @click="finish">结束本场</button></div><p v-else>等待房主选择重开或结束</p></section>
       <section v-if="match.status === 'match-complete'" class="completed-banner"><strong>{{ bestOfLabel(match) }} 已结束 · {{ wins.blue }} : {{ wins.red }}</strong><button v-if="isHost" class="button primary" @click="restart">下一场准备</button></section>
     </section>
-    <div v-if="showInvite" class="dialog-backdrop" @click.self="showInvite = false"><section class="copy-dialog" role="dialog" aria-label="邀请链接"><h2>邀请好友</h2><p>{{ copyResult }}</p><input ref="inviteInput" class="text-input" :value="inviteUrl" readonly aria-label="邀请链接" @click="inviteInput?.select()" /><div class="ready-actions"><button class="button primary" @click="copyShareLink"><Copy :size="18" />重试复制</button><button class="button secondary" @click="showInvite = false">关闭</button></div></section></div>
+    <div v-if="showInvite" class="dialog-backdrop" @click.self="showInvite = false"><section class="copy-dialog" role="dialog" aria-label="邀请链接"><h2>邀请{{ inviteSeat ? inviteSeat === 'blue' ? ' 1P' : ' 2P' : '好友' }}</h2><p>{{ copyResult }}</p><input ref="inviteInput" class="text-input" :value="inviteUrl" readonly aria-label="邀请链接" @click="inviteInput?.select()" /><div class="ready-actions"><button class="button primary" @click="copyShareLink(inviteSeat)"><Copy :size="18" />重试复制</button><button class="button secondary" @click="showInvite = false">关闭</button></div></section></div>
     <div v-if="savedImage && mobile" class="dialog-backdrop" @click.self="savedImage = ''"><section class="image-dialog" role="dialog" aria-label="BP 图片"><img :src="savedImage" alt="本局 BP 图" /><button class="button secondary" @click="savedImage = ''">关闭</button></section></div>
   </main>
 </template>

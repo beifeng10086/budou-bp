@@ -1,4 +1,4 @@
-import type { DataPackage, MatchState, Seat } from './types'
+import type { DataPackage, MatchState, RoomRole } from './types'
 import { isQuotaFailure } from './quota'
 
 type MatchWire = Omit<MatchState, 'data'> & { dataPackageId?: string; data?: DataPackage }
@@ -7,7 +7,7 @@ export interface RoomPayload {
   roomCode?: string
   match?: MatchWire
   data?: DataPackage
-  seat?: Seat
+  seat?: RoomRole
   players?: { blue: boolean; red: boolean }
   message?: string
   revision?: number

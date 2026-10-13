@@ -4,7 +4,8 @@ import {
   renamePlayer,
 } from '../src/bp'
 import { applyRoomAction as applySharedAction, type RoomAction } from '../src/room-actions'
-import type { DataPackage, MatchState, Seat } from '../src/types'
+import type { DataPackage, MatchState, RoomRole, Seat } from '../src/types'
+import { availableSeat, creatorSeats, roleForToken, type RoomSeats } from '../src/room-members'
 import { isQuotaFailure } from '../src/quota'
 import { quotaResponse, updateQuota, type QuotaEnv } from './quota'
 
@@ -21,7 +22,7 @@ type MatchCore = Omit<MatchState, 'data'> & { dataPackageId: string }
 
 interface RoomMeta {
   match: MatchCore
-  seats: Partial<Record<Seat, string>>
+  seats: RoomSeats
   createdAt: number
   lastActiveAt: number
   revision?: number
@@ -121,9 +122,10 @@ export class Room {
       const existingSeat = seatForToken(this.meta, token)
       if (!existingSeat) {
         if (mode === 'create') return new Response('Room already exists', { status: 409 })
-        if (this.meta.seats.red) return new Response('Room is full', { status: 409 })
-        this.meta.seats.red = token
-        this.setJoinName(url.searchParams.get('name'))
+        const seat = availableSeat(this.meta.seats, url.searchParams.get('seat'))
+        if (!seat) return new Response('Requested seat is occupied or room is full', { status: 409 })
+        this.meta.seats[seat] = token
+        this.setJoinName(seat, url.searchParams.get('name'))
         this.meta.revision = (this.meta.revision ?? 0) + 1
         this.meta.lastActiveAt = Date.now()
         await this.persistMeta()
@@ -168,9 +170,10 @@ export class Room {
       includeData = true
     } else if (!seatForToken(this.meta, token)) {
       if (url.searchParams.get('mode') === 'create') return error('房间码已存在，请重新创建', 409)
-      if (this.meta.seats.red) return error('房间已满，只允许两名玩家', 409)
-      this.meta.seats.red = token
-      this.setJoinName(url.searchParams.get('name'))
+      const seat = availableSeat(this.meta.seats, url.searchParams.get('seat'))
+      if (!seat) return error('所选席位已有人或房间已满', 409)
+      this.meta.seats[seat] = token
+      this.setJoinName(seat, url.searchParams.get('name'))
       this.meta.lastActiveAt = Date.now()
       this.meta.revision = (this.meta.revision ?? 0) + 1
       await this.persistMeta()
@@ -254,7 +257,7 @@ export class Room {
 
   private async createRoom(socket: WebSocket, token: string, candidate?: MatchState): Promise<void> {
     if (this.meta) {
-      if (this.meta.seats.blue === token) this.sendState(socket, true)
+      if (seatForToken(this.meta, token)) this.sendState(socket, true)
       else this.sendError(socket, '房间码已存在，请重试')
       return
     }
@@ -272,7 +275,7 @@ export class Room {
     this.data = candidate.data
     this.meta = {
       match: compactMatch(cleanMatch),
-      seats: { blue: token },
+      seats: creatorSeats(cleanMatch.settings.thirdPartyHost, token),
       createdAt: now,
       lastActiveAt: now,
       revision: 1,
@@ -362,8 +365,8 @@ export class Room {
     if (this.meta) await this.state.storage.put('meta', this.meta)
   }
 
-  private setJoinName(name: string | null): void {
-    if (this.meta && this.data) this.meta.match = compactMatch(renamePlayer(inflateMatch(this.meta.match, this.data), 'red', name))
+  private setJoinName(seat: Seat, name: string | null): void {
+    if (this.meta && this.data) this.meta.match = compactMatch(renamePlayer(inflateMatch(this.meta.match, this.data), seat, name))
   }
 
   private async scheduleAlarm(): Promise<void> {
@@ -374,7 +377,7 @@ export class Room {
   }
 }
 
-function applyRoomAction(match: MatchState, message: RoomActionMessage, seat: Seat): MatchState | undefined {
+function applyRoomAction(match: MatchState, message: RoomActionMessage, seat: RoomRole): MatchState | undefined {
   return applySharedAction(match, message, seat)
 }
 
@@ -388,10 +391,8 @@ function inflateMatch(match: MatchCore, data: DataPackage): MatchState {
   return { ...state, data }
 }
 
-function seatForToken(meta: RoomMeta, token: string): Seat | undefined {
-  if (meta.seats.blue === token) return 'blue'
-  if (meta.seats.red === token) return 'red'
-  return undefined
+function seatForToken(meta: RoomMeta, token: string): RoomRole | undefined {
+  return roleForToken(meta.seats, token)
 }
 
 function hasTwoPlayers(meta: RoomMeta): boolean {
