@@ -198,3 +198,72 @@
 .quota-blocked .quota-heading strong { color: #b13c40; }
 .quota-strip p { margin: 9px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .quota-metrics { grid-template-columns: minmax(0, 1fr); } }
+
+.arena-pool { touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }
+.arena-pool img { -webkit-user-drag: none; }
+.battle.landscape-play { --battle-height: 100dvh; padding: max(5px, env(safe-area-inset-top)) max(9px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(9px, env(safe-area-inset-left)); }
+.battle.landscape-play .match-screen { display: flex; flex-direction: column; position: relative; height: calc(var(--battle-height) - max(5px, env(safe-area-inset-top)) - max(5px, env(safe-area-inset-bottom))); max-width: 1440px; }
+.battle.landscape-play .match-header { position: absolute; top: 2px; left: 0; right: 0; z-index: 2; height: 28px; padding: 0; grid-template-columns: 28px minmax(0, 1fr) 28px; border: 0; pointer-events: none; }
+.battle.landscape-play .match-header .icon-command { width: 26px; height: 26px; }
+.battle.landscape-play .match-header button { pointer-events: auto; }
+.battle.landscape-play .match-header > :last-child { grid-column: 3; }
+.battle.landscape-play .match-title { display: none; }
+.battle.landscape-play .online-room .match-header { top: 26px; }
+.battle.landscape-play .share-strip { flex-shrink: 0; min-height: 24px; height: 24px; flex-wrap: nowrap; padding: 1px 6px; gap: 8px; }
+.battle.landscape-play .share-strip small { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.battle.arena-play .arena-board.landscape-board { flex: 1; min-height: 230px; height: auto; max-height: none; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 32px minmax(75px, 1fr) 26px clamp(80px, calc(var(--battle-height) * .24), 180px) 30px; gap: 2px 10px; }
+.landscape-board .arena-scoreboard { grid-area: 1 / 1 / 2 / 3; padding-inline: 32px; }
+.landscape-board .artwork-stage { grid-area: 2 / 1 / 3 / 3; background: #222728; border-top: 1px solid #484b40; }
+.landscape-board .arena-summary { grid-area: 3 / 1 / 4 / 2; }
+.landscape-board .arena-toolbar { grid-area: 3 / 2 / 4 / 3; padding: 0; margin: 0; gap: 4px; }
+.landscape-board .arena-catalog { grid-area: 4 / 1 / 5 / 3; grid-template-columns: 28px minmax(0, 1fr) 28px; gap: 5px; }
+.landscape-board .arena-confirm-row { grid-area: 5 / 1 / 6 / 3; }
+.landscape-board .arena-player { padding: 2px 5px; gap: 5px; }
+.landscape-board .arena-player strong { font-size: 15px; }
+.landscape-board .arena-player b { font-size: 23px; }
+.landscape-board .arena-scoreboard .stage-status { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.landscape-board .arena-scoreboard .stage-status strong { font-size: 14px; }
+.landscape-board .arena-timer { font-size: 26px; }
+.landscape-board .artwork-side { border: 0; }
+.landscape-board .artwork-slot { border: 0; padding: 0; background: transparent; box-shadow: inset 0 -2px var(--team); }
+.landscape-board .artwork-slot.pending { background: #303735; }
+.landscape-board .artwork-slot.previewing { outline: 1px dashed #cdb475; outline-offset: -2px; }
+.battle .landscape-board .ninja-artwork { inset: 3px 3px 28px; width: calc(100% - 6px); height: calc(100% - 31px); object-fit: contain; object-position: center bottom; }
+.battle .landscape-board .timed-stage .ninja-artwork { bottom: 51px; height: calc(100% - 54px); }
+.battle .landscape-board .artwork-slot > strong { bottom: 4px; left: 5px; right: 5px; font-size: 11px; line-height: 12px; max-height: 24px; overflow: hidden; background: #202425c9; }
+.battle .landscape-board .timed-stage .artwork-slot > strong { bottom: 28px; }
+.landscape-board .ban-seal { padding: 6px 9px; font-size: 22px; }
+.landscape-board .roster-bans { gap: 3px; border: 0; padding: 0; }
+.landscape-board .roster-bans > span { margin: 0; font-size: 9px; }
+.landscape-board .roster-bans .portrait { width: 20px; height: 20px; }
+.landscape-board .seat-tabs button { min-width: 48px; height: 24px; padding: 0 4px; font-size: 10px; }
+.landscape-board .turn-count, .landscape-board .timed-count { font-size: 10px; }
+.landscape-board .arena-search { min-width: 0; height: 26px; padding: 0 6px; gap: 4px; }
+.landscape-board .arena-search input { font-size: 11px; }
+.landscape-board .rank-filter { height: 26px; }
+.landscape-board .rank-filter button { min-width: 21px; padding: 0 4px; font-size: 10px; }
+.battle .landscape-board .arena-pool { grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 3px; min-height: 0; max-height: none; }
+.battle .landscape-board .arena-pool.compact { grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; }
+.battle .landscape-board .arena-pool .item-tile { grid-template-rows: minmax(0, 1fr); }
+.battle .landscape-board .arena-pool .item-tile > strong { display: none; }
+.battle .landscape-board .arena-pool.compact .item-tile { grid-template-rows: minmax(0, 1fr) 12px; border-color: #63664c; }
+.battle .landscape-board .arena-pool.compact .item-tile > strong { display: block; height: 12px; font-size: 9px; line-height: 12px; white-space: nowrap; text-overflow: ellipsis; padding: 0 1px; }
+.battle .landscape-board .arena-pool.compact .portrait { justify-self: center; width: auto; max-width: 100%; aspect-ratio: 1; }
+.battle .landscape-board .arena-pool .rank { font-size: 13px; }
+.battle .landscape-board .page-arrow { width: 28px; height: 36px; }
+.landscape-board .confirm-choice { min-height: 30px; padding: 2px 12px; font-size: 12px; }
+.landscape-board .page-indicator { width: 80px; }
+.landscape-board .page-indicator small { display: block; font-size: 9px; color: #9eaaa4; }
+.battle .landscape-board .timed-overlay { min-height: 23px; }
+.battle .landscape-board .timed-overlay .portrait { width: 21px; height: 21px; }
+.battle .landscape-board .timed-overlay span { font-size: 9px; }
+@media (orientation: portrait) {
+  .battle.mobile-landscape.arena-play { --battle-height: 100dvw; }
+  .mobile-landscape.arena-play .arena-pool { touch-action: pan-x pinch-zoom; }
+}
+@media (min-height: 650px) and (orientation: landscape) {
+  .battle.arena-play .arena-board.landscape-board { grid-template-rows: 50px minmax(75px, 1fr) 32px clamp(80px, calc(var(--battle-height) * .24), 180px) 38px; }
+  .landscape-board .arena-player strong { font-size: 20px; }
+  .landscape-board .arena-scoreboard .stage-status strong { font-size: 17px; }
+  .battle .landscape-board .artwork-slot > strong { font-size: 13px; }
+}

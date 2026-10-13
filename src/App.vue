@@ -257,7 +257,7 @@ async function exportImage() {
 </script>
 
 <template>
-  <main class="app-shell" :class="{ battle: screen === 'match', 'arena-play': screen === 'match' && match.status === 'playing', 'mobile-landscape': mobile && orientation === 'landscape', 'portrait-mode': mobile && orientation === 'portrait' }">
+  <main class="app-shell" :class="{ battle: screen === 'match', 'arena-play': screen === 'match' && match.status === 'playing', 'landscape-play': screen === 'match' && match.status === 'playing' && (!mobile || orientation === 'landscape'), 'mobile-landscape': mobile && orientation === 'landscape', 'portrait-mode': mobile && orientation === 'portrait' }">
     <section v-if="screen === 'home'" class="home-screen">
       <header class="brand-row"><div class="brand-mark"><Swords :size="22" /></div><h1>武斗 BP 练习室</h1></header>
       <section class="quota-strip" :class="{ 'quota-blocked': onlineBlocked }" aria-label="共享服务额度">
@@ -292,7 +292,7 @@ async function exportImage() {
         <label><span>通灵跨小局可重复</span><input v-model="repeatSummons" type="checkbox" role="switch" /></label>
       </div><p class="data-source">{{ selectedPackage.source }}</p></details>
     </section>
-    <section v-else class="match-screen">
+    <section v-else class="match-screen" :class="{ 'online-room': online }">
       <header class="match-header">
         <button class="icon-command" title="返回首页" @click="backHome"><ChevronLeft :size="19" /></button>
         <div class="match-title"><span>{{ bestOfLabel(match) }} · 第 {{ current.number }} 局</span><strong>{{ match.settings.title }}</strong></div>

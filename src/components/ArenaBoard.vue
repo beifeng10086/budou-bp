@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, ChevronLeft, ChevronRight, Search, X } from '@lucide/vue'
 import type { GameItem, MatchState, RoomRole, Seat } from '../types'
-import { canSelectNinja, canSelectTimedItem, playerName } from '../bp'
+import { bestOfLabel, canSelectNinja, canSelectTimedItem, playerName } from '../bp'
 import { sortNinjas } from '../catalog'
 import ItemPortrait from './ItemPortrait.vue'
 import NinjaArtwork from './NinjaArtwork.vue'
@@ -29,7 +29,7 @@ const timed = computed(() => phase.value.kind === 'scroll' || phase.value.kind =
 const operator = computed<Seat>(() => timed.value ? props.online ? props.seat === 'red' ? 'red' : 'blue' : activeSeat.value : phase.value.turn ?? 'blue')
 const pool = computed(() => phase.value.kind === 'scroll' ? props.match.data.scrolls : phase.value.kind === 'summon' ? props.match.data.summons : sortNinjas(props.match.data.ninjas))
 const filtered = computed(() => pool.value.filter(item => (!search.value.trim() || [item.name, ...(item.aliases ?? [])].some(name => name.toLowerCase().includes(search.value.trim().toLowerCase()))) && (timed.value || !rank.value || item.rank === rank.value)))
-const perPage = computed(() => props.portrait ? 12 : 20)
+const perPage = computed(() => props.portrait ? 12 : timed.value ? 20 : 26)
 const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / perPage.value)))
 const visible = computed(() => filtered.value.slice(page.value * perPage.value, (page.value + 1) * perPage.value))
 const stageTitle = computed(() => ({ ban: '禁用忍者', pick: '选择忍者', scroll: '选择秘卷', summon: '选择通灵', complete: '阵容完成' })[phase.value.kind])
@@ -97,6 +97,46 @@ async function openSearch() {
   searchInput.value?.focus()
 }
 function closeSearch() { searchInput.value?.blur(); searchOpen.value = false }
+let gesture: { id: number; x: number; y: number; rotated: boolean; dragging: boolean } | undefined
+let suppressClickUntil = 0
+function turnPage(direction: number) { page.value = Math.max(0, Math.min(pages.value - 1, page.value + direction)) }
+function startSwipe(event: PointerEvent) {
+  if (!event.isPrimary || event.button !== 0 || gesture) { gesture = undefined; return }
+  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, rotated: rotated.value, dragging: false }
+}
+function swipeDistance(event: PointerEvent) {
+  if (!gesture || gesture.id !== event.pointerId) return undefined
+  const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y
+  // CSS landscape rotates the local horizontal axis onto the device's vertical axis.
+  return gesture.rotated ? { x: dy, y: -dx } : { x: dx, y: dy }
+}
+function moveSwipe(event: PointerEvent) {
+  const delta = swipeDistance(event)
+  if (!delta || !gesture) return
+  if (Math.abs(delta.x) > 12 && Math.abs(delta.x) > Math.abs(delta.y) * 1.3) {
+    gesture.dragging = true
+    suppressClickUntil = performance.now() + 450
+    const catalog = event.currentTarget as HTMLElement
+    catalog.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+}
+function endSwipe(event: PointerEvent) {
+  const delta = swipeDistance(event)
+  if (!delta) return
+  if (Math.abs(delta.x) >= 32 && Math.abs(delta.x) > Math.abs(delta.y) * 1.3) {
+    turnPage(delta.x < 0 ? 1 : -1)
+    suppressClickUntil = performance.now() + 450
+  }
+  gesture = undefined
+}
+function cancelSwipe() {
+  if (gesture?.dragging) suppressClickUntil = performance.now() + 450
+  gesture = undefined
+}
+function guardCatalogClick(event: MouseEvent) {
+  if (performance.now() < suppressClickUntil) { event.preventDefault(); event.stopPropagation() }
+}
 function artwork(item?: GameItem): string | undefined {
   if (!item) return undefined
   return item.artwork ?? (item.officialId ? props.artworks.find(other => other.officialId === item.officialId)?.artwork : undefined)
@@ -109,7 +149,7 @@ function confirm() {
 </script>
 
 <template>
-  <section class="arena-board">
+  <section class="arena-board" :class="{ 'landscape-board': !portrait }">
     <div class="arena-scoreboard">
       <div v-for="seat in (['blue', 'red'] as const)" :key="seat" class="arena-player" :class="seat"><span class="seat-badge">{{ seat === 'blue' ? '1P' : '2P' }}</span><strong :title="playerName(match, seat)">{{ playerName(match, seat) }}</strong><b>{{ wins[seat] }}</b></div>
       <div class="stage-status"><strong>{{ timed ? '' : (phase.turn === 'blue' ? '1P ' : '2P ') }}{{ stageTitle }}</strong><div class="arena-timer" :class="{ urgent: !match.settings.noTimer && seconds <= 10, untimed: match.settings.noTimer }">{{ match.settings.noTimer ? '无计时' : seconds }}<small v-if="!match.settings.noTimer">s</small></div></div>
@@ -136,11 +176,11 @@ function confirm() {
     </div>
     <div class="catalog-toolbar arena-toolbar"><label class="arena-search"><Search :size="15" /><input v-model="search" type="search" :readonly="rotated" :role="rotated ? 'button' : undefined" placeholder="搜索名称 / 别名" :aria-label="rotated ? '打开忍者搜索' : '搜索名称或别名'" @click="openSearch" @focus="openSearch" /></label><div v-if="!timed" class="rank-filter" role="group" aria-label="忍者评级"><button v-for="value in ['', 'S', 'A', 'B', 'C']" :key="value" type="button" :aria-pressed="rank === value" @click="rank = value">{{ value || '全部' }}</button></div><span>{{ filtered.length }} 项</span></div>
     <div class="arena-catalog">
-      <button class="icon-command page-arrow" title="上一页" :disabled="page === 0" @click="page--"><ChevronLeft :size="19" /></button>
-      <section class="item-grid arena-pool" :class="{ compact: timed }"><button v-for="item in visible" :key="item.id" class="item-tile" :class="{ focused: timed ? drafts[operator].includes(item.id) : preview?.id === item.id, unavailable: !available(item) }" :data-rank="item.rank" :title="item.name" :aria-label="item.name" :aria-pressed="timed ? drafts[operator].includes(item.id) : preview?.id === item.id" :disabled="!available(item)" @click="select(item)"><ItemPortrait :item="item" eager /><span v-if="item.rank && !timed" class="rank">{{ item.rank }}</span><strong>{{ item.name }}</strong><span v-if="state(item)" class="tile-state">{{ state(item) }}</span></button><span v-if="!visible.length" class="empty-pool">没有匹配的项目</span></section>
-      <button class="icon-command page-arrow" title="下一页" :disabled="page >= pages - 1" @click="page++"><ChevronRight :size="19" /></button>
+      <button class="icon-command page-arrow" title="上一页" :disabled="page === 0" @click="turnPage(-1)"><ChevronLeft :size="19" /></button>
+      <section class="item-grid arena-pool" :class="{ compact: timed }" @pointerdown="startSwipe" @pointermove="moveSwipe" @pointerup="endSwipe" @pointercancel="cancelSwipe" @lostpointercapture.self="cancelSwipe" @click.capture="guardCatalogClick" @dragstart.prevent><button v-for="item in visible" :key="item.id" class="item-tile" :class="{ focused: timed ? drafts[operator].includes(item.id) : preview?.id === item.id, unavailable: !available(item) }" :data-rank="item.rank" :title="item.name" :aria-label="item.name" :aria-pressed="timed ? drafts[operator].includes(item.id) : preview?.id === item.id" :disabled="!available(item)" @click="select(item)"><ItemPortrait :item="item" eager /><span v-if="item.rank && !timed" class="rank">{{ item.rank }}</span><strong>{{ item.name }}</strong><span v-if="state(item)" class="tile-state">{{ state(item) }}</span></button><span v-if="!visible.length" class="empty-pool">没有匹配的项目</span></section>
+      <button class="icon-command page-arrow" title="下一页" :disabled="page >= pages - 1" @click="turnPage(1)"><ChevronRight :size="19" /></button>
     </div>
-    <div class="arena-confirm-row"><span class="page-indicator">{{ page + 1 }} / {{ pages }}</span><span class="preview-name">{{ spectating ? '房主观战中' : timed ? (selection(operator).length === 3 ? '已确认，等待对手' : count(operator) + '/3 待确认') : preview?.name || (online && seat !== phase.turn ? '等待对手选择' : '') }}</span><button v-if="!spectating" class="button confirm-choice" :disabled="!canConfirm" @click="confirm"><Check :size="19" />{{ phase.kind === 'ban' ? '确认禁用' : timed ? '确认三个' + (phase.kind === 'scroll' ? '秘卷' : '通灵') : '确认选择' }}</button></div>
+    <div class="arena-confirm-row"><span class="page-indicator">{{ page + 1 }} / {{ pages }}<small v-if="!portrait">{{ bestOfLabel(match) }} · 第 {{ match.current.number }} 局</small></span><span class="preview-name" :title="match.settings.title">{{ spectating ? '房主观战中' : timed ? (selection(operator).length === 3 ? '已确认，等待对手' : count(operator) + '/3 待确认') : preview?.name || (online && seat !== phase.turn ? '等待对手选择' : match.settings.title) }}</span><button v-if="!spectating" class="button confirm-choice" :disabled="!canConfirm" @click="confirm"><Check :size="19" />{{ phase.kind === 'ban' ? '确认禁用' : timed ? '确认三个' + (phase.kind === 'scroll' ? '秘卷' : '通灵') : '确认选择' }}</button></div>
   </section>
   <Teleport to="body"><div v-if="searchOpen" class="search-backdrop" @click.self="closeSearch" @keydown.esc="closeSearch"><section class="search-dialog" role="dialog" aria-modal="true" aria-label="忍者搜索"><header><strong>忍者搜索</strong><button class="icon-command" title="关闭搜索" @click="closeSearch"><X :size="18" /></button></header><form @submit.prevent="closeSearch"><label class="field-label">名称 / 别名<input ref="searchInput" v-model="search" type="search" class="text-input" aria-label="搜索名称或别名" enterkeyhint="search" /></label><div><span>{{ filtered.length }} 项</span><button class="button primary" type="submit"><Check :size="18" />完成搜索</button></div></form></section></div></Teleport>
 </template>
